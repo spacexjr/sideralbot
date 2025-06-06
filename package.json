@@ -1,8 +1,9 @@
 {
   "name": "aternos-startup",
   "version": "1.0.0",
-  "description": "Bot do Discord para iniciar servidor Aternos",
+  "description": "Bot do Discord com Puppeteer e integração com Minecraft Bedrock",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
@@ -10,7 +11,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "aternosapi": "github:miniesda/aternosAPIJavascript",
-    "discord.js": "^14.14.1"
+    "discord.js": "^14.14.1",
+    "bedrock-protocol": "^3.45.0",
+    "puppeteer": "^22.0.0"
   }
 }
