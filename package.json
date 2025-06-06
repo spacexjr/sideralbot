@@ -1,15 +1,16 @@
 {
   "name": "aternos-startup",
   "version": "1.0.0",
+  "description": "Bot do Discord para iniciar servidor Aternos",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
-    "aternosapi": "github:miniesda/aternosAPIJavascript"
+    "aternosapi": "github:miniesda/aternosAPIJavascript",
+    "discord.js": "^14.14.1"
   }
 }
