@@ -1,15 +1,13 @@
 {
   "name": "aternos-startup",
   "version": "1.0.0",
-  "description": "Bot do Discord com Puppeteer e integração com Minecraft Bedrock",
+  "description": "Bot do Discord com Puppeteer e Minecraft Bedrock",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "puppeteer install"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "discord.js": "^14.14.1",
     "bedrock-protocol": "^3.45.0",
