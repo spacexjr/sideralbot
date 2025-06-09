@@ -1,7 +1,7 @@
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events } = require('discord.js');
-const { createClient } = require('bedrock-protocol');
-const puppeteer = require('puppeteer');
-const fs = require('fs');
+import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events } from 'discord.js';
+import { createClient } from 'bedrock-protocol';
+import puppeteer from 'puppeteer';
+import fs from 'fs';
 
 // Configurações do Discord e Minecraft
 const DISCORD_TOKEN = 'MTAyODgwNzAxODYxOTg3MTI5Mw.G-B3Hz.KfA6rUe7nBP2aZ05QTt4EWTU3QvZnauP7zYppw'; // Coloque seu token aqui
