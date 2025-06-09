@@ -65,23 +65,20 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[Chat Minecraft] ${packet.source_name}: ${packet.message}`);
     });
 
-    mcClient.on('player_list', packet => {
-      try {
-        console.log('📦 Pacote player_list recebido:', packet);
-
-        if (packet && typeof packet === 'object' && Array.isArray(packet.records)) {
-          connectedPlayers = packet.records
-            .filter(record => typeof record === 'object' && typeof record.username === 'string')
-            .map(record => record.username);
-          console.log(`📋 Jogadores online: ${connectedPlayers.join(', ')}`);
-        } else {
-          connectedPlayers = [];
-          console.warn('⚠️ "packet.records" não é um array:', packet.records);
-        }
-      } catch (err) {
-        console.error('❌ Erro ao processar lista de jogadores:', err);
-      }
-    });
+mcClient.on('player_list', packet => {
+  try {
+    if (Array.isArray(packet.records)) {
+      connectedPlayers = packet.records
+        .filter(record => record && typeof record.username === 'string')
+        .map(record => record.username);
+      console.log(`📋 Jogadores online: ${connectedPlayers.join(', ')}`);
+    } else {
+      console.warn('⚠️ packet.records não é um array:', packet.records);
+    }
+  } catch (err) {
+    console.error('❌ Erro ao processar player_list:', err);
+  }
+});
 
     mcClient.on('disconnect', () => {
       mcClient = null;
