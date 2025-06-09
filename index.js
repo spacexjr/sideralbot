@@ -99,7 +99,11 @@ client.on(Events.InteractionCreate, async interaction => {
     await interaction.reply('🔄 Tentando ligar o servidor Aternos...');
 
     try {
-      const browser = await puppeteer.launch({ headless: false, defaultViewport: null });
+const browser = await puppeteer.launch({
+  headless: false,
+  defaultViewport: null,
+  args: ['--no-sandbox', '--disable-setuid-sandbox']
+});
       const page = await browser.newPage();
 
       if (fs.existsSync(SESSION_FILE)) {
