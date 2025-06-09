@@ -62,23 +62,26 @@ client.on(Events.InteractionCreate, async interaction => {
     });
 
     mcClient.on('text', packet => {
-      console.log(`[Chat Minecraft] ${packet.source_name}: ${packet.message}`);
+      const sender = packet.source_name || '📢 Servidor';
+      const message = packet.message;
+      console.log(`[Chat Minecraft] ${sender}: ${message}`);
     });
 
-mcClient.on('player_list', packet => {
-  try {
-    if (Array.isArray(packet.records)) {
-      connectedPlayers = packet.records
-        .filter(record => record && typeof record.username === 'string')
-        .map(record => record.username);
-      console.log(`📋 Jogadores online: ${connectedPlayers.join(', ')}`);
-    } else {
-      console.warn('⚠️ packet.records não é um array:', packet.records);
-    }
-  } catch (err) {
-    console.error('❌ Erro ao processar player_list:', err);
-  }
-});
+    mcClient.on('player_list', packet => {
+      try {
+        if (packet.type === 'add' && Array.isArray(packet.records)) {
+          connectedPlayers = packet.records
+            .filter(record => typeof record.username === 'string' && record.username !== BEDROCK_SERVER.username)
+            .map(record => record.username);
+
+          console.log(`📋 Jogadores online: ${connectedPlayers.join(', ')}`);
+        } else {
+          console.log(`📥 Recebido player_list tipo '${packet.type}', ignorando.`);
+        }
+      } catch (err) {
+        console.error('❌ Erro ao processar player_list:', err);
+      }
+    });
 
     mcClient.on('disconnect', () => {
       mcClient = null;
