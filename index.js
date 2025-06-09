@@ -27,10 +27,11 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const commands = [
   new SlashCommandBuilder().setName('entrar').setDescription('Conecta o bot ao servidor Minecraft Bedrock'),
   new SlashCommandBuilder().setName('sair').setDescription('Desconecta o bot do servidor Minecraft'),
-  new SlashCommandBuilder().setName('status').setDescription('Mostra o status do servidor e do bot')
+  new SlashCommandBuilder().setName('status').setDescription('Mostra o status do servidor Minecraft e do bot')
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+
 (async () => {
   try {
     console.log('⏳ Registrando comandos...');
@@ -47,29 +48,30 @@ client.once(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
-
   const { commandName } = interaction;
 
   if (commandName === 'entrar') {
     if (mcClient) return interaction.reply('⚠️ Já estou conectado ao servidor.');
+
     await interaction.deferReply();
+
     mcClient = createClient({ ...BEDROCK_SERVER });
 
     mcClient.once('join', () => {
-      connectedPlayers = [];
       interaction.editReply('✅ Entrei no servidor Minecraft Bedrock!');
     });
 
     mcClient.on('text', packet => {
-      if (packet.message.includes('joined the game')) {
-        const name = packet.source_name;
-        if (!connectedPlayers.includes(name)) connectedPlayers.push(name);
-      } else if (packet.message.includes('left the game')) {
-        const name = packet.source_name;
-        connectedPlayers = connectedPlayers.filter(n => n !== name);
-      }
-
       console.log(`[Chat Minecraft] ${packet.source_name}: ${packet.message}`);
+    });
+
+    mcClient.on('player_list', packet => {
+      if (packet.records) {
+        connectedPlayers = packet.records
+          .filter(record => record.username)
+          .map(record => record.username);
+        console.log(`📋 Jogadores online: ${connectedPlayers.join(', ')}`);
+      }
     });
 
     mcClient.on('disconnect', () => {
@@ -86,6 +88,7 @@ client.on(Events.InteractionCreate, async interaction => {
   } else if (commandName === 'sair') {
     const member = interaction.member;
     const hasRole = member.roles.cache.some(role => allowedRoleIds.includes(role.id));
+
     if (!hasRole) {
       return interaction.reply({
         content: '❌ Você não tem permissão para usar este comando.',
@@ -103,25 +106,32 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
   } else if (commandName === 'status') {
-    const serverStatus = mcClient ? '🟢 Online' : '🔴 Offline';
-    const botStatus = client.ws.status === 0 ? '🟢 Conectado' : '🔴 Desconectado';
-    const playerList = connectedPlayers.length
-      ? connectedPlayers.join(', ')
-      : 'Nenhum jogador online';
+    const statusEmbed = {
+      color: 0x00ff00,
+      title: '📊 Status do Servidor Minecraft',
+      fields: [
+        {
+          name: 'Servidor Bedrock',
+          value: `🟢 Online em ${BEDROCK_SERVER.host}:${BEDROCK_SERVER.port}`,
+          inline: true
+        },
+        {
+          name: 'Bot conectado',
+          value: mcClient ? '✅ Sim' : '❌ Não',
+          inline: true
+        },
+        {
+          name: 'Jogadores online',
+          value: connectedPlayers.length > 0
+            ? `${connectedPlayers.length} jogador(es):\n${connectedPlayers.join(', ')}`
+            : 'Nenhum jogador online',
+          inline: false
+        }
+      ],
+      timestamp: new Date().toISOString()
+    };
 
-    await interaction.reply({
-      embeds: [{
-        title: '📊 Status do Servidor Minecraft',
-        color: 0x00FF00,
-        fields: [
-          { name: 'Servidor', value: serverStatus, inline: true },
-          { name: 'Bot', value: botStatus, inline: true },
-          { name: 'Jogadores Online', value: `${connectedPlayers.length}`, inline: true },
-          { name: 'Nomes', value: playerList }
-        ],
-        timestamp: new Date().toISOString()
-      }]
-    });
+    await interaction.reply({ embeds: [statusEmbed] });
   }
 });
 
