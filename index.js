@@ -62,21 +62,31 @@ client.on(Events.InteractionCreate, async interaction => {
     });
 
     mcClient.on('text', packet => {
-      const sender = packet.source_name || '📢 Servidor';
-      const message = packet.message;
-      console.log(`[Chat Minecraft] ${sender}: ${message}`);
+      console.log(`[Chat Minecraft] ${packet.source_name}: ${packet.message}`);
     });
 
     mcClient.on('player_list', packet => {
       try {
-        if (packet.type === 'add' && Array.isArray(packet.records)) {
-          connectedPlayers = packet.records
-            .filter(record => typeof record.username === 'string' && record.username !== BEDROCK_SERVER.username)
-            .map(record => record.username);
+        const records = Array.isArray(packet.records) ? packet.records : [];
 
-          console.log(`📋 Jogadores online: ${connectedPlayers.join(', ')}`);
+        if (packet.type === 'add') {
+          const newPlayers = records
+            .filter(r => typeof r.username === 'string' && r.username !== BEDROCK_SERVER.username)
+            .map(r => r.username);
+
+          connectedPlayers.push(...newPlayers);
+          connectedPlayers = [...new Set(connectedPlayers)];
+
+          console.log(`✅ Jogadores conectados: ${connectedPlayers.join(', ')}`);
+        } else if (packet.type === 'remove') {
+          const removeUUIDs = records.map(r => r.uuid);
+          connectedPlayers = connectedPlayers.filter(name => {
+            return !records.some(r => r.username === name || r.uuid === name);
+          });
+
+          console.log(`👋 Alguém saiu. Restantes: ${connectedPlayers.join(', ')}`);
         } else {
-          console.log(`📥 Recebido player_list tipo '${packet.type}', ignorando.`);
+          console.log(`📥 player_list sem tipo definido. Records: ${JSON.stringify(records, null, 2)}`);
         }
       } catch (err) {
         console.error('❌ Erro ao processar player_list:', err);
