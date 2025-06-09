@@ -20,7 +20,6 @@ const allowedRoleIds = [
 ];
 
 let mcClient = null;
-let connectedPlayers = [];
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -65,37 +64,8 @@ client.on(Events.InteractionCreate, async interaction => {
       console.log(`[Chat Minecraft] ${packet.source_name}: ${packet.message}`);
     });
 
-    mcClient.on('player_list', packet => {
-      try {
-        const records = Array.isArray(packet.records) ? packet.records : [];
-
-        if (packet.type === 'add') {
-          const newPlayers = records
-            .filter(r => typeof r.username === 'string' && r.username !== BEDROCK_SERVER.username)
-            .map(r => r.username);
-
-          connectedPlayers.push(...newPlayers);
-          connectedPlayers = [...new Set(connectedPlayers)];
-
-          console.log(`✅ Jogadores conectados: ${connectedPlayers.join(', ')}`);
-        } else if (packet.type === 'remove') {
-          const removeUUIDs = records.map(r => r.uuid);
-          connectedPlayers = connectedPlayers.filter(name => {
-            return !records.some(r => r.username === name || r.uuid === name);
-          });
-
-          console.log(`👋 Alguém saiu. Restantes: ${connectedPlayers.join(', ')}`);
-        } else {
-          console.log(`📥 player_list sem tipo definido. Records: ${JSON.stringify(records, null, 2)}`);
-        }
-      } catch (err) {
-        console.error('❌ Erro ao processar player_list:', err);
-      }
-    });
-
     mcClient.on('disconnect', () => {
       mcClient = null;
-      connectedPlayers = [];
       console.log('❌ Fui desconectado do servidor Minecraft.');
     });
 
@@ -118,7 +88,6 @@ client.on(Events.InteractionCreate, async interaction => {
     if (mcClient) {
       mcClient.disconnect();
       mcClient = null;
-      connectedPlayers = [];
       interaction.reply('👋 Saí do servidor Minecraft.');
     } else {
       interaction.reply('⚠️ Não estou conectado.');
@@ -138,13 +107,6 @@ client.on(Events.InteractionCreate, async interaction => {
           name: 'Bot conectado',
           value: mcClient ? '✅ Sim' : '❌ Não',
           inline: true
-        },
-        {
-          name: 'Jogadores online',
-          value: connectedPlayers.length > 0
-            ? `${connectedPlayers.length} jogador(es):\n${connectedPlayers.join(', ')}`
-            : 'Nenhum jogador online',
-          inline: false
         }
       ],
       timestamp: new Date().toISOString()
