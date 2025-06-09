@@ -2,7 +2,7 @@ import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events } 
 import { createClient } from 'bedrock-protocol';
 
 // Configurações do Discord e Minecraft
-const DISCORD_TOKEN = 'MTAyODgwNzAxODYxOTg3MTI5Mw.G-B3Hz.KfA6rUe7nBP2aZ05QTt4EWTU3QvZnauP7zYppw';
+const DISCORD_TOKEN = 'MTAyODgwNzAxODYxOTg3MTI5Mw.G-B3Hz.KfA6rUe7nBP2aZ05QTt4EWTU3QvZnauP7zYppw'; // Coloque seu token aqui
 const CLIENT_ID = '1028807018619871293';
 const GUILD_ID = '979385538496831508';
 
@@ -66,11 +66,20 @@ client.on(Events.InteractionCreate, async interaction => {
     });
 
     mcClient.on('player_list', packet => {
-      if (packet.records) {
-        connectedPlayers = packet.records
-          .filter(record => record.username)
-          .map(record => record.username);
-        console.log(`📋 Jogadores online: ${connectedPlayers.join(', ')}`);
+      try {
+        console.log('📦 Pacote player_list recebido:', packet);
+
+        if (packet && typeof packet === 'object' && Array.isArray(packet.records)) {
+          connectedPlayers = packet.records
+            .filter(record => typeof record === 'object' && typeof record.username === 'string')
+            .map(record => record.username);
+          console.log(`📋 Jogadores online: ${connectedPlayers.join(', ')}`);
+        } else {
+          connectedPlayers = [];
+          console.warn('⚠️ "packet.records" não é um array:', packet.records);
+        }
+      } catch (err) {
+        console.error('❌ Erro ao processar lista de jogadores:', err);
       }
     });
 
