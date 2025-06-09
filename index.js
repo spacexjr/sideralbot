@@ -100,7 +100,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     try {
 const browser = await puppeteer.launch({
-  headless: false,
+  headless: 'new',
   defaultViewport: null,
   args: ['--no-sandbox', '--disable-setuid-sandbox']
 });
