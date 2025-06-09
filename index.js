@@ -100,7 +100,7 @@ client.on(Events.InteractionCreate, async interaction => {
       fields: [
         {
           name: 'Servidor Bedrock',
-          value: `🟢 Online em ${BEDROCK_SERVER.host}:${BEDROCK_SERVER.port}`,
+          value: `🟢 Online`,
           inline: true
         },
         {
