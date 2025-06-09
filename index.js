@@ -94,13 +94,23 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
   } else if (commandName === 'status') {
+    let serverOnline = false;
+    try {
+      await ping({ host: BEDROCK_SERVER.host, port: BEDROCK_SERVER.port });
+      serverOnline = true;
+    } catch {
+      serverOnline = false;
+    }
+
     const statusEmbed = {
-      color: 0x00ff00,
+      color: serverOnline ? 0x00ff00 : 0xff0000,
       title: '📊 Status do Servidor Minecraft',
       fields: [
         {
           name: 'Servidor Bedrock',
-          value: `🟢 Online`,
+          value: serverOnline
+            ? `🟢 Online `
+            : `🔴 Offline `,
           inline: true
         },
         {
