@@ -19,6 +19,7 @@ const allowedRoleIds = [
   '1082460240391446528'
 ];
 
+
 let mcClient = null;
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -94,23 +95,13 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
   } else if (commandName === 'status') {
-    let serverOnline = false;
-    try {
-      await ping({ host: BEDROCK_SERVER.host, port: BEDROCK_SERVER.port });
-      serverOnline = true;
-    } catch {
-      serverOnline = false;
-    }
-
     const statusEmbed = {
-      color: serverOnline ? 0x00ff00 : 0xff0000,
+      color: 0x00ff00,
       title: '📊 Status do Servidor Minecraft',
       fields: [
         {
           name: 'Servidor Bedrock',
-          value: serverOnline
-            ? `🟢 Online `
-            : `🔴 Offline `,
+          value: `🟢 Verifique o Aternos`,
           inline: true
         },
         {
