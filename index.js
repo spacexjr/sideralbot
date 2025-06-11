@@ -2,7 +2,7 @@ import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events } 
 import { createClient } from 'bedrock-protocol';
 
 // Configurações do Discord e Minecraft
-const DISCORD_TOKEN = ''; // Coloque seu token aqui 
+const DISCORD_TOKEN = 'MTAyODgwNzAxODYxOTg3MTI5Mw.G-B3Hz.KfA6rUe7nBP2aZ05QTt4EWTU3QvZnauP7zYppw'; // Coloque seu token aqui 
 const CLIENT_ID = '1028807018619871293';
 const GUILD_ID = '979385538496831508';
 
@@ -53,7 +53,7 @@ client.on(Events.InteractionCreate, async interaction => {
   // ✅ Verifica se o comando está sendo executado no canal correto
   if (interaction.channelId !== CANAL_PERMITIDO) {
     return interaction.reply({
-      content: '❌ Este comando só pode ser usado no canal autorizado.',
+      content: '❌ space disse: seus burro, tem o canal dos comando, executem os comando la.',
       ephemeral: true
     });
   }
