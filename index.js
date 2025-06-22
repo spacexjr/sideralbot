@@ -25,10 +25,8 @@ const CANAIS_PERMITIDOS = ['1382404120199303249', '1307780152553635921'];
 
 let mcClient = null;
 
-// Inicializa bot Discord
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Comandos slash
 const commands = [
   new SlashCommandBuilder().setName('entrar').setDescription('Conecta o bot ao servidor Minecraft Bedrock'),
   new SlashCommandBuilder().setName('sair').setDescription('Desconecta o bot do servidor Minecraft'),
@@ -41,8 +39,8 @@ const commands = [
     )
 ].map(cmd => cmd.toJSON());
 
-// Registra os comandos
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+
 (async () => {
   try {
     console.log('⏳ Registrando comandos...');
@@ -53,16 +51,13 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
   }
 })();
 
-// Bot pronto
 client.once(Events.ClientReady, () => {
   console.log(`🤖 Bot online como ${client.user.tag}`);
 });
 
-// Handler de comandos
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // Verifica canal autorizado
   if (!CANAIS_PERMITIDOS.includes(interaction.channelId)) {
     return interaction.reply({
       content: '❌ space disse: seus burro, tem o canal dos comando, executem os comando la.',
@@ -72,7 +67,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
   const { commandName } = interaction;
 
-  // Comando /entrar
   if (commandName === 'entrar') {
     if (mcClient) return interaction.reply('⚠️ Já estou conectado ao servidor.');
 
@@ -103,7 +97,6 @@ client.on(Events.InteractionCreate, async interaction => {
       interaction.followUp('❌ Erro ao conectar no servidor Minecraft.');
     });
 
-  // Comando /sair
   } else if (commandName === 'sair') {
     const member = interaction.member;
     const hasRole = member.roles.cache.some(role => allowedSairRoleIds.includes(role.id));
@@ -123,7 +116,6 @@ client.on(Events.InteractionCreate, async interaction => {
       interaction.reply('⚠️ Não estou conectado.');
     }
 
-  // Comando /status
   } else if (commandName === 'status') {
     const statusEmbed = {
       color: mcClient ? 0x00ff00 : 0xff0000,
@@ -145,7 +137,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
     await interaction.reply({ embeds: [statusEmbed] });
 
-  // Comando /mandar
   } else if (commandName === 'mandar') {
     const isAutorizadoMandar = interaction.member.roles.cache.some(role =>
       allowedMandarRoleIds.includes(role.id)
@@ -160,21 +151,34 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const msg = interaction.options.getString('mensagem');
 
-    if (mcClient) {
-      mcClient.write('text', {
-        type: 'chat',
-        needs_translation: false,
-        source_name: BEDROCK_SERVER.username,
-        xuid: '',
-        platform_chat_id: '',
-        message: msg
-      });
+    if (!msg || typeof msg !== 'string' || msg.trim() === '') {
+      return interaction.reply('❌ A mensagem é inválida ou vazia.');
+    }
 
-      await interaction.reply(`💬 Enviado no Minecraft: \`${msg}\``);
+    if (mcClient) {
+      try {
+        mcClient.write('text', {
+          type: 'chat',
+          needs_translation: false,
+          source_name: BEDROCK_SERVER.username,
+          xuid: '',
+          platform_chat_id: '',
+          message: msg
+        });
+
+        await interaction.reply(`💬 Enviado no Minecraft: \`${msg}\``);
+      } catch (err) {
+        console.error('Erro ao enviar mensagem para o Minecraft:', err);
+        await interaction.reply('❌ Erro ao enviar mensagem para o Minecraft.');
+      }
     } else {
       await interaction.reply('❌ O bot não está conectado ao servidor Minecraft.');
     }
   }
 });
+
+// Logs e segurança
+process.on('unhandledRejection', console.error);
+client.on('error', console.error);
 
 client.login(DISCORD_TOKEN);
