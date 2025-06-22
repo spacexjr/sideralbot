@@ -2,7 +2,7 @@ import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events } 
 import { createClient } from 'bedrock-protocol';
 
 // Configurações do Discord e Minecraft
-const DISCORD_TOKEN = 'MTAyODgwNzAxODYxOTg3MTI5Mw.G-B3Hz.KfA6rUe7nBP2aZ05QTt4EWTU3QvZnauP7zYppw'; // Coloque seu token aqui 
+const DISCORD_TOKEN = 'MTAyODgwNzAxODYxOTg3MTI5Mw.G-B3Hz.KfA6rUe7nBP2aZ05QTt4EWTU3QvZnauP7zYppw'; // 🔐 Coloque seu token aqui
 const CLIENT_ID = '1028807018619871293';
 const GUILD_ID = '979385538496831508';
 
@@ -19,7 +19,8 @@ const allowedRoleIds = [
   '1082460240391446528'
 ];
 
-const CANAL_PERMITIDO = '1382404120199303249';
+const allowedUserIds = ['ID_DO_USER1', 'ID_DO_USER2']; // 🔒 IDs permitidos para /mandar
+const CANAL_PERMITIDO = '1382404120199303249'; // ID do canal permitido
 
 let mcClient = null;
 
@@ -28,7 +29,13 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const commands = [
   new SlashCommandBuilder().setName('entrar').setDescription('Conecta o bot ao servidor Minecraft Bedrock'),
   new SlashCommandBuilder().setName('sair').setDescription('Desconecta o bot do servidor Minecraft'),
-  new SlashCommandBuilder().setName('status').setDescription('Mostra o status do servidor Minecraft e do bot')
+  new SlashCommandBuilder().setName('status').setDescription('Mostra o status do servidor Minecraft e do bot'),
+  new SlashCommandBuilder()
+    .setName('mandar')
+    .setDescription('Envia uma mensagem no servidor Minecraft (restrito)')
+    .addStringOption(option =>
+      option.setName('mensagem').setDescription('Mensagem para enviar').setRequired(true)
+    )
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
@@ -50,7 +57,7 @@ client.once(Events.ClientReady, () => {
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // ✅ Verifica se o comando está sendo executado no canal correto
+  // Verifica canal permitido
   if (interaction.channelId !== CANAL_PERMITIDO) {
     return interaction.reply({
       content: '❌ space disse: seus burro, tem o canal dos comando, executem os comando la.',
@@ -72,12 +79,17 @@ client.on(Events.InteractionCreate, async interaction => {
     });
 
     mcClient.on('text', packet => {
-      console.log(`[Chat Minecraft] ${packet.source_name}: ${packet.message}`);
+      console.log(`[Minecraft] ${packet.source_name}: ${packet.message}`);
     });
 
     mcClient.on('disconnect', () => {
       mcClient = null;
       console.log('❌ Fui desconectado do servidor Minecraft.');
+
+      const discordChannel = client.channels.cache.get(CANAL_PERMITIDO);
+      if (discordChannel && discordChannel.isTextBased()) {
+        discordChannel.send('❌ Fui desconectado do servidor Minecraft.');
+      }
     });
 
     mcClient.on('error', err => {
@@ -106,12 +118,12 @@ client.on(Events.InteractionCreate, async interaction => {
 
   } else if (commandName === 'status') {
     const statusEmbed = {
-      color: 0x00ff00,
+      color: mcClient ? 0x00ff00 : 0xff0000,
       title: '📊 Status do Servidor Minecraft',
       fields: [
         {
           name: 'Servidor Bedrock',
-          value: `🟢 Verifique o Aternos`,
+          value: `🌐 ${BEDROCK_SERVER.host}:${BEDROCK_SERVER.port}`,
           inline: true
         },
         {
@@ -124,6 +136,31 @@ client.on(Events.InteractionCreate, async interaction => {
     };
 
     await interaction.reply({ embeds: [statusEmbed] });
+
+  } else if (commandName === 'mandar') {
+    if (!allowedUserIds.includes(interaction.user.id)) {
+      return interaction.reply({
+        content: '❌ Você não tem permissão para usar este comando.',
+        ephemeral: true
+      });
+    }
+
+    const msg = interaction.options.getString('mensagem');
+
+    if (mcClient) {
+      mcClient.write('text', {
+        type: 'chat',
+        needs_translation: false,
+        source_name: BEDROCK_SERVER.username,
+        xuid: '',
+        platform_chat_id: '',
+        message: msg
+      });
+
+      await interaction.reply(`💬 Enviado no Minecraft: \`${msg}\``);
+    } else {
+      await interaction.reply('❌ O bot não está conectado ao servidor Minecraft.');
+    }
   }
 });
 
