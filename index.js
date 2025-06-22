@@ -1,8 +1,8 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events } from 'discord.js';
 import { createClient } from 'bedrock-protocol';
 
-// Configurações do Discord e Minecraft
-const DISCORD_TOKEN = 'MTAyODgwNzAxODYxOTg3MTI5Mw.G-B3Hz.KfA6rUe7nBP2aZ05QTt4EWTU3QvZnauP7zYppw'; // 🔐 Coloque seu token aqui
+// 🔐 Configurações do bot e servidor
+const DISCORD_TOKEN = 'MTAyODgwNzAxODYxOTg3MTI5Mw.G-B3Hz.KfA6rUe7nBP2aZ05QTt4EWTU3QvZnauP7zYppw'; // Coloque seu token aqui
 const CLIENT_ID = '1028807018619871293';
 const GUILD_ID = '979385538496831508';
 
@@ -10,22 +10,25 @@ const BEDROCK_SERVER = {
   host: 'Infobearzlla.aternos.me',
   port: 15507,
   username: 'ZllaBOT',
-  offline: true
+  offline: true,
+  version: '1.21.90' // ajuste se necessário
 };
 
-const allowedRoleIds = [
-  '1100124305901240400',
-  '1294110761496350770',
-  '1082460240391446528'
-];
+// Cargos permitidos para /mandar
+const allowedMandarRoleIds = ['1384352187106197534', '1082460240391446528'];
 
-const allowedUserIds = ['ID_DO_USER1', 'ID_DO_USER2']; // 🔒 IDs permitidos para /mandar
-const CANAL_PERMITIDO = '1382404120199303249'; // ID do canal permitido
+// Cargos permitidos para /sair
+const allowedSairRoleIds = ['1100124305901240400', '1294110761496350770', '1082460240391446528'];
+
+// Canais onde os comandos podem ser usados
+const CANAIS_PERMITIDOS = ['1382404120199303249', 'ID_DO_SEGUNDO_CANAL'];
 
 let mcClient = null;
 
+// Inicializa bot Discord
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
+// Comandos slash
 const commands = [
   new SlashCommandBuilder().setName('entrar').setDescription('Conecta o bot ao servidor Minecraft Bedrock'),
   new SlashCommandBuilder().setName('sair').setDescription('Desconecta o bot do servidor Minecraft'),
@@ -38,8 +41,8 @@ const commands = [
     )
 ].map(cmd => cmd.toJSON());
 
+// Registra os comandos
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-
 (async () => {
   try {
     console.log('⏳ Registrando comandos...');
@@ -50,15 +53,17 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
   }
 })();
 
+// Bot pronto
 client.once(Events.ClientReady, () => {
   console.log(`🤖 Bot online como ${client.user.tag}`);
 });
 
+// Handler de comandos
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // Verifica canal permitido
-  if (interaction.channelId !== CANAL_PERMITIDO) {
+  // Verifica canal autorizado
+  if (!CANAIS_PERMITIDOS.includes(interaction.channelId)) {
     return interaction.reply({
       content: '❌ space disse: seus burro, tem o canal dos comando, executem os comando la.',
       ephemeral: true
@@ -67,6 +72,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
   const { commandName } = interaction;
 
+  // Comando /entrar
   if (commandName === 'entrar') {
     if (mcClient) return interaction.reply('⚠️ Já estou conectado ao servidor.');
 
@@ -86,8 +92,8 @@ client.on(Events.InteractionCreate, async interaction => {
       mcClient = null;
       console.log('❌ Fui desconectado do servidor Minecraft.');
 
-      const discordChannel = client.channels.cache.get(CANAL_PERMITIDO);
-      if (discordChannel && discordChannel.isTextBased()) {
+      const discordChannel = client.channels.cache.get(interaction.channelId);
+      if (discordChannel?.isTextBased()) {
         discordChannel.send('❌ Fui desconectado do servidor Minecraft.');
       }
     });
@@ -97,9 +103,10 @@ client.on(Events.InteractionCreate, async interaction => {
       interaction.followUp('❌ Erro ao conectar no servidor Minecraft.');
     });
 
+  // Comando /sair
   } else if (commandName === 'sair') {
     const member = interaction.member;
-    const hasRole = member.roles.cache.some(role => allowedRoleIds.includes(role.id));
+    const hasRole = member.roles.cache.some(role => allowedSairRoleIds.includes(role.id));
 
     if (!hasRole) {
       return interaction.reply({
@@ -116,6 +123,7 @@ client.on(Events.InteractionCreate, async interaction => {
       interaction.reply('⚠️ Não estou conectado.');
     }
 
+  // Comando /status
   } else if (commandName === 'status') {
     const statusEmbed = {
       color: mcClient ? 0x00ff00 : 0xff0000,
@@ -137,8 +145,13 @@ client.on(Events.InteractionCreate, async interaction => {
 
     await interaction.reply({ embeds: [statusEmbed] });
 
+  // Comando /mandar
   } else if (commandName === 'mandar') {
-    if (!allowedUserIds.includes(interaction.user.id)) {
+    const isAutorizadoMandar = interaction.member.roles.cache.some(role =>
+      allowedMandarRoleIds.includes(role.id)
+    );
+
+    if (!isAutorizadoMandar) {
       return interaction.reply({
         content: '❌ Você não tem permissão para usar este comando.',
         ephemeral: true
