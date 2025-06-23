@@ -151,36 +151,39 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const msg = interaction.options.getString('mensagem');
 
-    if (!msg || typeof msg !== 'string' || msg.trim() === '') {
-      return interaction.reply('❌ A mensagem é inválida ou vazia.');
+    // Validação
+    if (typeof msg !== 'string' || !msg.trim()) {
+      return interaction.reply('❌ Mensagem inválida. Envie uma mensagem de texto válida.');
     }
 
-    const finalMessage = String(msg);
-    const botName = typeof BEDROCK_SERVER.username === 'string' ? BEDROCK_SERVER.username : 'Bot';
+    if (!mcClient) {
+      return interaction.reply('❌ O bot não está conectado ao servidor Minecraft.');
+    }
 
-    if (mcClient) {
-      try {
-        mcClient.write('text', {
-          type: 'chat',
-          needs_translation: false,
-          source_name: 'ZllaBOT',
-          xuid: '',
-          platform_chat_id: '',
-          message: finalMessage
-        });
+    try {
+      const finalMsg = msg.trim();
+      const botName = BEDROCK_SERVER.username || 'Bot';
 
-        await interaction.reply(`💬 Enviado no Minecraft: \`${finalMessage}\``);
-      } catch (err) {
-        console.error('Erro ao enviar mensagem para o Minecraft:', err);
-        await interaction.reply('❌ Erro ao enviar mensagem para o Minecraft.');
-      }
-    } else {
-      await interaction.reply('❌ O bot não está conectado ao servidor Minecraft.');
+      console.log('📤 Enviando mensagem para o Minecraft:', finalMsg);
+
+      mcClient.write('text', {
+        type: 'chat',
+        needs_translation: false,
+        source_name: botName,
+        xuid: '',
+        platform_chat_id: '',
+        message: finalMsg
+      });
+
+      await interaction.reply(`💬 Enviado no Minecraft: \`${finalMsg}\``);
+    } catch (err) {
+      console.error('❌ Erro ao enviar mensagem para o Minecraft:', err);
+      await interaction.reply('❌ Erro ao enviar mensagem para o Minecraft.');
     }
   }
 });
 
-// Segurança contra falhas
+// Segurança global
 process.on('unhandledRejection', console.error);
 client.on('error', console.error);
 
