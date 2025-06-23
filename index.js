@@ -23,6 +23,7 @@ const allowedSairRoleIds = ['1100124305901240400', '1294110761496350770', '10824
 // Canais onde os comandos podem ser usados
 const CANAIS_PERMITIDOS = ['1382404120199303249', '1307780152553635921'];
 
+
 let mcClient = null;
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -34,9 +35,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName('mandar')
     .setDescription('Envia uma mensagem no servidor Minecraft (restrito)')
-    .addStringOption(option =>
-      option.setName('mensagem').setDescription('Mensagem para enviar').setRequired(true)
-    )
+    .addStringOption(option => option.setName('mensagem').setDescription('Mensagem para enviar').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
@@ -60,7 +59,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
   if (!CANAIS_PERMITIDOS.includes(interaction.channelId)) {
     return interaction.reply({
-      content: '❌ space disse: seus burro, tem o canal dos comando, executem os comando la.',
+      content: '❌ Use os comandos somente nos canais permitidos.',
       ephemeral: true
     });
   }
@@ -121,16 +120,8 @@ client.on(Events.InteractionCreate, async interaction => {
       color: mcClient ? 0x00ff00 : 0xff0000,
       title: '📊 Status do Servidor Minecraft',
       fields: [
-        {
-          name: 'Servidor Bedrock',
-          value: `🌐 ${BEDROCK_SERVER.host}:${BEDROCK_SERVER.port}`,
-          inline: true
-        },
-        {
-          name: 'Bot conectado',
-          value: mcClient ? '✅ Sim' : '❌ Não',
-          inline: true
-        }
+        { name: 'Servidor Bedrock', value: `${BEDROCK_SERVER.host}:${BEDROCK_SERVER.port}`, inline: true },
+        { name: 'Bot conectado', value: mcClient ? '✅ Sim' : '❌ Não', inline: true }
       ],
       timestamp: new Date().toISOString()
     };
@@ -151,9 +142,8 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const msg = interaction.options.getString('mensagem');
 
-    // Validação
-    if (typeof msg !== 'string' || !msg.trim()) {
-      return interaction.reply('❌ Mensagem inválida. Envie uma mensagem de texto válida.');
+    if (!msg || typeof msg !== 'string' || !msg.trim()) {
+      return interaction.reply('❌ Mensagem inválida.');
     }
 
     if (!mcClient) {
@@ -161,21 +151,16 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     try {
-      const finalMsg = msg.trim();
-      const botName = BEDROCK_SERVER.username || 'Bot';
-
-      console.log('📤 Enviando mensagem para o Minecraft:', finalMsg);
-
       mcClient.write('text', {
         type: 'chat',
         needs_translation: false,
-        source_name: botName,
-        xuid: '',
-        platform_chat_id: '',
-        message: finalMsg
+        source_name: BEDROCK_SERVER.username || 'ZllaBOT',
+        message: msg.trim(),
+        xuid: '0000000000000000',
+        platform_chat_id: ''
       });
 
-      await interaction.reply(`💬 Enviado no Minecraft: \`${finalMsg}\``);
+      await interaction.reply(`💬 Enviado no Minecraft: \`${msg.trim()}\``);
     } catch (err) {
       console.error('❌ Erro ao enviar mensagem para o Minecraft:', err);
       await interaction.reply('❌ Erro ao enviar mensagem para o Minecraft.');
@@ -183,7 +168,7 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 });
 
-// Segurança global
+// Tratamento global de erros
 process.on('unhandledRejection', console.error);
 client.on('error', console.error);
 
