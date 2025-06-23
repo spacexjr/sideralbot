@@ -155,19 +155,21 @@ client.on(Events.InteractionCreate, async interaction => {
       return interaction.reply('❌ A mensagem é inválida ou vazia.');
     }
 
+    const finalMessage = String(msg);
+    const botName = typeof BEDROCK_SERVER.username === 'string' ? BEDROCK_SERVER.username : 'Bot';
+
     if (mcClient) {
       try {
-mcClient.write('text', {
-  type: 'chat',
-  needs_translation: false,
-  source_name: String(BEDROCK_SERVER.username || 'Bot'),
-  xuid: '',
-  platform_chat_id: '',
-  message: String(msg)
-});
+        mcClient.write('text', {
+          type: 'chat',
+          needs_translation: false,
+          source_name: ZllaBOT,
+          xuid: '',
+          platform_chat_id: '',
+          message: finalMessage
+        });
 
-
-        await interaction.reply(`💬 Enviado no Minecraft: \`${msg}\``);
+        await interaction.reply(`💬 Enviado no Minecraft: \`${finalMessage}\``);
       } catch (err) {
         console.error('Erro ao enviar mensagem para o Minecraft:', err);
         await interaction.reply('❌ Erro ao enviar mensagem para o Minecraft.');
@@ -178,7 +180,7 @@ mcClient.write('text', {
   }
 });
 
-// Logs e segurança
+// Segurança contra falhas
 process.on('unhandledRejection', console.error);
 client.on('error', console.error);
 
