@@ -163,7 +163,7 @@ client.on(Events.InteractionCreate, async interaction => {
         mcClient.write('text', {
           type: 'chat',
           needs_translation: false,
-          source_name: ZllaBOT,
+          source_name: 'ZllaBOT',
           xuid: '',
           platform_chat_id: '',
           message: finalMessage
