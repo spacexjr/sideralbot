@@ -157,14 +157,15 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (mcClient) {
       try {
-        mcClient.write('text', {
-          type: 'chat',
-          needs_translation: false,
-          source_name: BEDROCK_SERVER.username,
-          xuid: '',
-          platform_chat_id: '',
-          message: msg
-        });
+mcClient.write('text', {
+  type: 'chat',
+  needs_translation: false,
+  source_name: String(BEDROCK_SERVER.username || 'Bot'),
+  xuid: '',
+  platform_chat_id: '',
+  message: String(msg)
+});
+
 
         await interaction.reply(`💬 Enviado no Minecraft: \`${msg}\``);
       } catch (err) {
