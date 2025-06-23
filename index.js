@@ -84,7 +84,6 @@ client.on(Events.InteractionCreate, async interaction => {
     mcClient.on('disconnect', () => {
       mcClient = null;
       console.log('❌ Fui desconectado do servidor Minecraft.');
-
       const discordChannel = client.channels.cache.get(interaction.channelId);
       if (discordChannel?.isTextBased()) {
         discordChannel.send('❌ Fui desconectado do servidor Minecraft.');
@@ -151,11 +150,12 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     try {
+      // Força todos os campos como strings, para evitar erro ERR_INVALID_ARG_TYPE
       mcClient.write('text', {
         type: 'chat',
         needs_translation: false,
-        source_name: BEDROCK_SERVER.username || 'ZllaBOT',
-        message: msg.trim(),
+        source_name: String(BEDROCK_SERVER.username || 'ZllaBOT'),
+        message: String(msg.trim()),
         xuid: '0000000000000000',
         platform_chat_id: ''
       });
