@@ -11,6 +11,5 @@
   "dependencies": {
     "discord.js": "^14.14.1",
     "bedrock-protocol": "^3.47.0",
-    "puppeteer": "^22.0.0"
   }
 }
