@@ -1,15 +1,25 @@
 {
-  "name": "aternos-startup",
+  "name": "minecraft-discord-bot",
   "version": "1.0.0",
-  "description": "Bot do Discord com Puppeteer e Minecraft Bedrock",
+  "description": "Bot global do Discord que se conecta a servidores Minecraft Bedrock",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "postinstall": "puppeteer install"
+    "start": "node index.js"
   },
+  "keywords": [
+    "discord",
+    "minecraft",
+    "bedrock",
+    "bot"
+  ],
+  "author": "space",
+  "license": "MIT",
   "dependencies": {
+    "bedrock-protocol": "^3.48.0",
     "discord.js": "^14.14.1",
-    "bedrock-protocol": "^3.47.0",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "pg": "^8.13.0"
   }
 }
