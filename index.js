@@ -125,16 +125,36 @@ function conectarMinecraft(guildId, interaction) {
       reconectando = false;
     });
 
-    mc.on('text', packet => {
+    // ── Chat MC → DC com menções ──
+    mc.on('text', async packet => {
       if (!packet.source_name || packet.source_name === config.nick) return;
-      carregarChat(guildId).then(canais => {
-        canais.forEach(canalId => {
-          const canal = client.channels.cache.get(canalId);
-          if (canal) canal.send(`💬 **${packet.source_name}**: ${packet.message}`);
-        });
+
+      const canais = await carregarChat(guildId);
+      const guild = client.guilds.cache.get(guildId);
+      if (!guild) return;
+
+      let mensagem = packet.message.replace(/§[0-9a-fklmnor]/gi, '');
+
+      // Menções de todos os membros
+      guild.members.cache.forEach(member => {
+        const regex = new RegExp(`@${member.user.username}`, 'gi');
+        mensagem = mensagem.replace(regex, `<@${member.id}>`);
+      });
+
+      // Menção específica do usuário autorizado via @space
+      if (USUARIO_AUTORIZADO_ID) {
+        mensagem = mensagem.replace(/@space/gi, `<@${USUARIO_AUTORIZADO_ID}>`);
+      }
+
+      canais.forEach(canalId => {
+        const canal = client.channels.cache.get(canalId);
+        if (canal?.type === ChannelType.GuildText) {
+          canal.send(`💬 **${packet.source_name}**: ${mensagem}`).catch(() => {});
+        }
       });
     });
 
+    // ── Jogadores online ──
     mc.on('player_list', packet => {
       const lista = jogadoresOnline.get(guildId) || new Map();
       if (packet.records?.type === 'add') packet.records.records.forEach(p => lista.set(p.uuid, p.username));
@@ -142,7 +162,7 @@ function conectarMinecraft(guildId, interaction) {
       jogadoresOnline.set(guildId, lista);
     });
 
-    // dias do servidor
+    // ── Dias do servidor ──
     mc.on('set_time', packet => {
       const dias = Math.floor(packet.time / 24000);
       const dados = jogadoresOnline.get(guildId) || new Map();
@@ -258,7 +278,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
         const dados = jogadoresOnline.get(guildId) || new Map();
 
-        // Pega jogadores via ping primeiro
         if (status.playersSample && status.playersSample.length > 0) {
           jogadoresTexto = `👥 Jogadores: ${status.playersSample.map(p => p.name).join(', ')}`;
         } else if (dados.size > 0) {
@@ -284,7 +303,7 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 });
 
-// ───── Chat DC → MC ─────
+// ───── Chat DC → MC com username real ─────
 client.on("messageCreate", async msg => {
   if (msg.author.bot || !msg.guildId) return;
   const canais = await carregarChat(msg.guildId);
@@ -294,10 +313,19 @@ client.on("messageCreate", async msg => {
 
   const texto = msg.content.replace(/<@!?(\d+)>/g, (m, id) => {
     const member = msg.guild?.members?.cache?.get(id);
-    return member ? `@${member.displayName}` : '@usuario';
+    return member ? `@${member.user.username}` : '@usuario';
   });
-  const authorName = (msg.member?.displayName || msg.author.username).replace(/[\n\r]/g, ' ');
-  mc.queue('text', { type: 'chat', needs_translation: false, source_name: mc.username, xuid: '', platform_chat_id: '', filtered_message: '', message: `<${authorName}> ${texto}` });
+
+  const authorName = msg.member?.user.username || msg.author.username;
+  mc.queue('text', {
+    type: 'chat',
+    needs_translation: false,
+    source_name: mc.username,
+    xuid: '',
+    platform_chat_id: '',
+    filtered_message: '',
+    message: `<${authorName}> ${texto}`
+  });
 });
 
 // ───── Webserver ─────
