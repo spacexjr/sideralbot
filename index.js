@@ -125,7 +125,7 @@ function conectarMinecraft(guildId, interaction) {
       reconectando = false;
     });
 
-    // ── Chat MC → DC com menções reais ──
+    // ── Chat MC → DC com menções ──
     mc.on('text', async packet => {
       if (!packet.source_name || packet.source_name === config.nick) return;
 
@@ -135,25 +135,16 @@ function conectarMinecraft(guildId, interaction) {
 
       let mensagem = packet.message.replace(/§[0-9a-fklmnor]/gi, '');
 
-      // ===== CORREÇÃO DE MENÇÕES =====
+      // Menções de todos os membros
       guild.members.cache.forEach(member => {
-        const username = member.user.username;
-        const nickname = member.nickname;
-
-        const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const nomes = [username];
-        if (nickname) nomes.push(nickname);
-
-        nomes.forEach(nome => {
-          const regex = new RegExp(`@${esc(nome)}`, 'gi');
-          mensagem = mensagem.replace(regex, `<@${member.id}>`);
-        });
+        const regex = new RegExp(`@${member.user.username}`, 'gi');
+        mensagem = mensagem.replace(regex, `<@${member.id}>`);
       });
 
+      // Menção específica do usuário autorizado via @space
       if (USUARIO_AUTORIZADO_ID) {
         mensagem = mensagem.replace(/@space/gi, `<@${USUARIO_AUTORIZADO_ID}>`);
       }
-      // ================================
 
       canais.forEach(canalId => {
         const canal = client.channels.cache.get(canalId);
@@ -312,7 +303,7 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 });
 
-// ───── Chat DC → MC ─────
+// ───── Chat DC → MC com username real ─────
 client.on("messageCreate", async msg => {
   if (msg.author.bot || !msg.guildId) return;
   const canais = await carregarChat(msg.guildId);
