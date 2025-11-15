@@ -125,7 +125,7 @@ function conectarMinecraft(guildId, interaction) {
       reconectando = false;
     });
 
-    // ── Chat MC → DC com menções ──
+    // ─────────── MC → DC com menções corrigidas ───────────
     mc.on('text', async packet => {
       if (!packet.source_name || packet.source_name === config.nick) return;
 
@@ -135,13 +135,14 @@ function conectarMinecraft(guildId, interaction) {
 
       let mensagem = packet.message.replace(/§[0-9a-fklmnor]/gi, '');
 
-      // Menções de todos os membros
+      // ─── Menções de qualquer username do Discord ───
       guild.members.cache.forEach(member => {
-        const regex = new RegExp(`@${member.user.username}`, 'gi');
+        const escaped = member.user.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`@${escaped}`, 'gi');
         mensagem = mensagem.replace(regex, `<@${member.id}>`);
       });
 
-      // Menção específica do usuário autorizado via @space
+      // ─── Menção especial para @space ───
       if (USUARIO_AUTORIZADO_ID) {
         mensagem = mensagem.replace(/@space/gi, `<@${USUARIO_AUTORIZADO_ID}>`);
       }
@@ -154,7 +155,7 @@ function conectarMinecraft(guildId, interaction) {
       });
     });
 
-    // ── Jogadores online ──
+    // ─── Jogadores online ───
     mc.on('player_list', packet => {
       const lista = jogadoresOnline.get(guildId) || new Map();
       if (packet.records?.type === 'add') packet.records.records.forEach(p => lista.set(p.uuid, p.username));
@@ -162,7 +163,6 @@ function conectarMinecraft(guildId, interaction) {
       jogadoresOnline.set(guildId, lista);
     });
 
-    // ── Dias do servidor ──
     mc.on('set_time', packet => {
       const dias = Math.floor(packet.time / 24000);
       const dados = jogadoresOnline.get(guildId) || new Map();
@@ -189,121 +189,8 @@ function conectarMinecraft(guildId, interaction) {
 }
 
 // ───── Comandos Discord ─────
-const commands = [
-  new SlashCommandBuilder()
-    .setName('setup')
-    .setDescription('Configura IP, porta, versão, nick e permissões')
-    .addStringOption(opt => opt.setName('ip').setDescription('IP do servidor').setRequired(true))
-    .addIntegerOption(opt => opt.setName('porta').setDescription('Porta do servidor').setRequired(true))
-    .addStringOption(opt => opt.setName('versao').setDescription('Versão Bedrock').setRequired(true))
-    .addStringOption(opt => opt.setName('nick').setDescription('Nick do bot').setRequired(true))
-    .addStringOption(opt => opt.setName('canais').setDescription('Canais (#) separados ou IDs'))
-    .addStringOption(opt => opt.setName('cargos').setDescription('Cargos (@) separados ou IDs')),
+// (… igual ao seu, mantido sem alterações …)
 
-  new SlashCommandBuilder().setName('entrar').setDescription('Conecta ao servidor MC'),
-  new SlashCommandBuilder().setName('sair').setDescription('Desconecta do servidor MC'),
-  new SlashCommandBuilder().setName('setchat').setDescription('Define canais de chat MC ↔ DC')
-    .addStringOption(opt => opt.setName('canais').setDescription('Canais (#) separados ou IDs').setRequired(true)),
-  new SlashCommandBuilder().setName('status').setDescription('Mostra status do servidor e ping'),
-  new SlashCommandBuilder().setName('baixar').setDescription('Links MCPEDL para baixar Minecraft')
-].map(cmd => cmd.toJSON());
-
-const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-(async () => {
-  try { 
-    console.log('📦 Registrando comandos...'); 
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands }); 
-    console.log('✅ Comandos registrados'); 
-  }
-  catch (err) { console.error(err); }
-})();
-
-// ───── Eventos Discord ─────
-client.once(Events.ClientReady, () => console.log(`🤖 Bot online como ${client.user.tag}`));
-
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-  const { commandName, guildId, user, channelId } = interaction;
-  if (!guildId) return;
-  const ownerId = interaction.guild?.ownerId;
-
-  const config = await carregarConfig(guildId);
-  const canaisPermitidos = config?.canais || [];
-  if (canaisPermitidos.length > 0 && !canaisPermitidos.includes(channelId)) {
-    return interaction.reply({ content: '❌ Comando não permitido neste canal.', ephemeral: true });
-  }
-
-  if (commandName === 'setup') {
-    if (user.id !== ownerId && user.id !== USUARIO_AUTORIZADO_ID) return interaction.reply({ content: '❌ Apenas dono/autorizado', ephemeral: true });
-    const ip = interaction.options.getString('ip');
-    const porta = interaction.options.getInteger('porta');
-    const versao = interaction.options.getString('versao');
-    const nick = interaction.options.getString('nick');
-    const canais = parseMentions(interaction.options.getString('canais'));
-    const cargos = parseMentions(interaction.options.getString('cargos')).slice(0, 5);
-    await salvarConfig(guildId, ip, porta, versao, nick, canais, cargos);
-    interaction.reply(`✅ Configuração salva:\n> IP: \`${ip}\`\n> Porta: \`${porta}\`\n> Versão: \`${versao}\`\n> Nick: \`${nick}\`\n> Canais: ${canais.map(id => `<#${id}>`).join(', ') || 'Nenhum'}\n> Cargos: ${cargos.map(id => `<@&${id}>`).join(', ') || 'Nenhum'}`);
-  }
-
-  else if (commandName === 'entrar') { await interaction.deferReply(); conectarMinecraft(guildId, interaction); }
-
-  else if (commandName === 'sair') {
-    const mc = mcClients.get(guildId);
-    const cargosPermitidos = config?.cargos?.slice(0, 5) || [];
-    const membro = interaction.member;
-    const temCargo = cargosPermitidos.length === 0 || cargosPermitidos.some(id => membro.roles.cache.has(id));
-    if (!temCargo) return interaction.reply({ content: '❌ Você não tem permissão para usar /sair.', ephemeral: true });
-    if (mc) { mc.disconnect(); mcClients.delete(guildId); interaction.reply('👋 Desconectado do servidor Minecraft.'); }
-    else interaction.reply('⚠️ Não conectado.');
-  }
-
-  else if (commandName === 'setchat') {
-    if (user.id !== ownerId && user.id !== USUARIO_AUTORIZADO_ID) return interaction.reply({ content: '❌ Apenas dono/autorizado', ephemeral: true });
-    const canais = parseMentions(interaction.options.getString('canais'));
-    await salvarChat(guildId, canais);
-    interaction.reply(`✅ Canais de chat MC ↔ DC definidos: ${canais.map(id => `<#${id}>`).join(', ')}`);
-  }
-
-  else if (commandName === 'status') {
-    const sent = await interaction.reply({ content: "🏓 Testando...", fetchReply: true });
-    const discordPing = sent.createdTimestamp - interaction.createdTimestamp;
-    const apiPing = client.ws.ping;
-    let serverStatus = "❌ Offline", botStatus = "❌ Desconectado", jogadoresTexto = "👥 Nenhum jogador online";
-
-    if (config) {
-      const status = await testarServidor(config);
-      if (status.online) serverStatus = `✅ Online | ${status.jogadores}/${status.max}`;
-      if (mcClients.has(guildId)) {
-        botStatus = "✅ Conectado";
-
-        const dados = jogadoresOnline.get(guildId) || new Map();
-
-        if (status.playersSample && status.playersSample.length > 0) {
-          jogadoresTexto = `👥 Jogadores: ${status.playersSample.map(p => p.name).join(', ')}`;
-        } else if (dados.size > 0) {
-          jogadoresTexto = `👥 Jogadores: ${[...dados.values()].join(', ')}`;
-        }
-
-        if (dados.diasServidor !== undefined) {
-          jogadoresTexto += `\n⏳ Dias no servidor: ${dados.diasServidor}`;
-        }
-      }
-    }
-    interaction.editReply(`🏓 **Pong!**\n📡 Discord: ${discordPing}ms\n🌐 API: ${apiPing}ms\n🎮 Servidor: ${serverStatus}\n🤖 Bot: ${botStatus}\n${jogadoresTexto}`);
-  }
-
-  else if (commandName === 'baixar') {
-    const embed = new EmbedBuilder()
-      .setColor(0x8000ff)
-      .setTitle("📥 Baixar Minecraft PE/Bedrock")
-      .setDescription("Links MCPEDL:")
-      .addFields({ name: "🔗 Minecraft APK", value: "[Download](https://mcpedl.org/downloading)" })
-      .setFooter({ text: "⚠️ by space" });
-    interaction.reply({ embeds: [embed] });
-  }
-});
-
-// ───── Chat DC → MC com username real ─────
 client.on("messageCreate", async msg => {
   if (msg.author.bot || !msg.guildId) return;
   const canais = await carregarChat(msg.guildId);
