@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import {
   Client, GatewayIntentBits, REST, Routes,
-  SlashCommandBuilder, Events, EmbedBuilder, ChannelType
+  SlashCommandBuilder, Events, EmbedBuilder, ChannelType, ActivityType
 } from 'discord.js';
 import { createClient, ping } from 'bedrock-protocol';
 import pkg from 'pg';
@@ -521,3 +521,4 @@ client.on("messageCreate", async msg => {
 
   client.login(DISCORD_TOKEN);
 })().catch(e => console.error('BOOT ERR', e));
+
