@@ -1,4 +1,4 @@
-// index.js (versão E - sem NENHUM log de morte)
+// index.js (versão final otimizada para performance de menções)
 import 'dotenv/config';
 import {
   Client, GatewayIntentBits, REST, Routes,
@@ -16,16 +16,26 @@ const USUARIO_AUTORIZADO_ID = process.env.USUARIO_AUTORIZADO_ID;
 const PORT = process.env.PORT || 3000;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
-/* ---------- Discord client ---------- */
+/* ---------- Discord client (OTIMIZADO) ---------- */
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
-  ]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences
+  ],
+  sweepers: { members: { lifetime: 3600 } },
+  presence: {
+    status: 'idle', // ← AUSENTE
+    activities: [
+      {
+        name: "Minecraft Bedrock",
+        type: ActivityType.Playing
+      }
+    ]
+  }
 });
-
 /* ---------- In-memory maps ---------- */
 let mcClients = new Map();           // guildId -> bedrock client
 let jogadoresOnline = new Map();     // guildId -> Map(uuid->username)
@@ -108,7 +118,7 @@ async function getOrCreateLogThread(guildId) {
 
     // Create new
     const created = await canal.threads.create({
-      name: 'logs',
+      name: '「🔗」logs-mine',
       autoArchiveDuration: 1440,
       reason: 'Tópico automático de logs do servidor Minecraft'
     });
@@ -125,7 +135,6 @@ function classifyServerMessage(raw) {
   const s = raw.replace(/§[0-9a-fklmnor]/gi, '').trim();
   if (/ entrou no jogo$/i.test(s) || / joined the game$/i.test(s)) return { kind: 'entrada', text: s };
   if (/ saiu do jogo$/i.test(s) || / left the game$/i.test(s)) return { kind: 'saida', text: s };
-  // Linha de morte removida: if (/ morreu/i.test(s) || / foi morto/i.test(s) || / died/i.test(s)) return { kind: 'morte', text: s };
   return { kind: 'chat', text: s };
 }
 
@@ -183,8 +192,14 @@ function conectarMinecraft(guildId, interaction = null) {
 
         const guild = client.guilds.cache.get(guildId);
         if (guild) {
+          // REMOÇÃO DO .fetch() LENTO - usando apenas o cache
+          
           guild.members.cache.forEach(m => {
-            const esc = m.user.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Usa o nome de usuário (username) do cache
+            const nomeExibicao = m.user.username;
+            if (!nomeExibicao) return;
+
+            const esc = nomeExibicao.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             texto = texto.replace(new RegExp(`@${esc}`, 'gi'), `<@${m.id}>`);
           });
         }
@@ -220,17 +235,13 @@ function conectarMinecraft(guildId, interaction = null) {
         const isJoin = /%multiplayer\.player\.joined/i.test(raw) || / entrou no jogo$/i.test(noColor) || / joined the game$/i.test(noColor);
         const isLeave = /%multiplayer\.player\.left/i.test(raw) || / saiu do jogo$/i.test(noColor) || / left the game$/i.test(noColor);
         
-        // Variáveis de morte removidas (isDeathKey e isDeathText)
-
         // name from params or source_name
         const playerName = params[0] || packet.source_name || 'Jogador';
-        
-        // Se não for Join ou Leave, e for uma mensagem de sistema/tip, trata como sistema genérico.
-        // A morte (que é tip/system) cairá neste bloco apenas se for tratada como sistema genérico
-        const isSystemMessage = (packet.type === 'system' || packet.type === 'tip') && !isJoin && !isLeave;
+        
+        // Se não for Join ou Leave, e for uma mensagem de sistema/tip, trata como sistema genérico (inclui mortes).
+        const isSystemMessage = (packet.type === 'system' || packet.type === 'tip') && !isJoin && !isLeave;
 
         // SYSTEM EVENTS -> thread logs
-        // Condição alterada: Morte foi removida
         if (isJoin || isLeave || isSystemMessage) {
           const thread = await getOrCreateLogThread(guildId);
           // fallback channel if no thread
@@ -242,27 +253,25 @@ function conectarMinecraft(guildId, interaction = null) {
           // join/leave handling
           if (isJoin) {
             const txt = (playerName && playerName !== 'Jogador') ? `🟢 **${playerName} entrou no servidor**` : `🟢 **Um jogador entrou no servidor**`;
-            if (thread) return thread.send(txt).catch(() => {}); return fallbackSend(txt);
+            if (thread) { try { if (thread.archived) await thread.setArchived(false); } catch {} return thread.send(txt).catch(() => {}); } return fallbackSend(txt);
           }
           if (isLeave) {
             const txt = (playerName && playerName !== 'Jogador') ? `🔴 **${playerName} saiu do servidor**` : `🔴 **Um jogador saiu do servidor**`;
-            if (thread) return thread.send(txt).catch(() => {}); return fallbackSend(txt);
+            if (thread) { try { if (thread.archived) await thread.setArchived(false); } catch {} return thread.send(txt).catch(() => {}); } return fallbackSend(txt);
           }
 
-            // generic system message fallback (inclui mortes não classificadas)
-          if (isSystemMessage || packet.source_name === '') { // Mensagem sem autor, geralmente sistema
-              if (thread) return thread.send(`ℹ️ **${noColor}**`).catch(() => {});
-              return fallbackSend(`ℹ️ **${noColor}**`);
-            }
-            
-            // Evita que mensagens que foram classificadas como sistema mas não são, caiam no chat normal
-            return; 
+          // IGNORA LOGS DE SISTEMA GENÉRICOS (inclui mortes)
+          if (isSystemMessage || packet.source_name === '') { 
+            return; 
+          }
+          
+          return; 
         }
 
         // NORMAL CHAT -> send to configured channel
-        if (packet.source_name) { // Apenas se houver um autor (chat)
+        if (packet.source_name) { // Apenas se houver um autor (chat)
           await sendChatToChannel(packet.source_name, noColor);
-        }
+        }
 
       } catch (err) {
         console.error('mc.on(text) handler error:', err);
@@ -346,7 +355,21 @@ const commands = [
     console.error('Erro registrando comandos:', e);
   }
 
-  client.once(Events.ClientReady, () => console.log(`🤖 Bot online como ${client.user.tag}`));
+  client.once(Events.ClientReady, async () => {
+    console.log(`🤖 Bot online como ${client.user.tag}`);
+    // FORÇA O CACHING DE MEMBROS AO INICIAR
+    for (const [guildId, guild] of client.guilds.cache) {
+        if (guild.memberCount > guild.members.cache.size) {
+            try {
+                // Solicita todos os membros do servidor de uma vez
+                await guild.members.fetch();
+                console.log(`Cache de membros para ${guild.name} carregado.`);
+            } catch (e) {
+                console.error(`Erro ao carregar membros para ${guild.name}:`, e);
+            }
+        }
+    }
+});
 
   /* ---------- Interaction handler ---------- */
   client.on(Events.InteractionCreate, async interaction => {
@@ -437,48 +460,58 @@ const commands = [
       return interaction.editReply(`🏓 **Pong!**\n📡 Discord: ${discordPing}ms\n🌐 API: ${apiPing}ms\n🎮 Servidor: ${serverStatus}\n🤖 Bot: ${botStatus}\n${jogadoresTexto}`);
     }
 
-    if (commandName === 'baixar') {
-      const embed = new EmbedBuilder().setColor(0x8000ff).setTitle("📥 Baixar Minecraft PE/Bedrock").setDescription("Links MCPEDL:").addFields({ name: "🔗 Minecraft APK", value: "[Download](https://mcpedl.org/downloading)" }).setFooter({ text: "⚠️ by space" });
-      return interaction.reply({ embeds: [embed] });
-    }
+if (commandName === 'baixar') {
+        const embed = new EmbedBuilder()
+            .setColor(0x8000ff)
+            .setTitle("📥 Baixar Minecraft PE/Bedrock")
+            .setDescription("Links MCPEDL:")
+            .addFields(
+                // Link existente
+                { name: "🔗 Minecraft APK", value: "[Download](https://mcpedl.org/downloading)" },
+                // NOVO LINK ADICIONADO AQUI
+                { name: "✨ Actions & Stuff", value: "[Download](https://www.mediafire.com/file/7nhvp52l6hu1p09/Actions-and-Stuff-1.8.mcpack/file)" } // URL de exemplo
+            )
+            .setFooter({ text: "⚠️ by space" });
+        return interaction.reply({ embeds: [embed] });
+    }q
   });
 
-  /* ---------- DC -> MC handler ---------- */
-  client.on("messageCreate", async msg => {
-    try {
-      if (msg.author.bot || !msg.guildId) return;
-      const canais = await carregarChat(msg.guildId);
-      if (!canais || canais.length === 0) return;
-      if (!canais.includes(msg.channelId)) return;
-      const mc = mcClients.get(msg.guildId);
-      if (!mc) return;
+/* ---------- DC -> MC ---------- */
+client.on("messageCreate", async msg => {
+  try {
+    if (msg.author.bot || !msg.guildId) return;
 
-      // transform mentions to @username for MC text
-      const texto = msg.content.replace(/<@!?(\d+)>/g, (m, id) => {
-        const member = msg.guild?.members?.cache?.get(id);
-        return member ? `@${member.user.username}` : '@usuario';
-      });
+    const canais = await carregarChat(msg.guildId);
+    if (!canais || !canais.includes(msg.channelId)) return;
 
-      // use account username (not displayName)
-      const authorName = msg.author.username || msg.member?.user?.username || 'Discord';
+    const mc = mcClients.get(msg.guildId);
+    if (!mc) return;
 
-      try {
-        // entire message in dark blue (§1)
-        const final = `§1<${authorName}> ${texto}`;
-        mc.queue && mc.queue('text', {
-          type: 'chat',
-          needs_translation: false,
-          source_name: authorName,
-          xuid: '',
-          platform_chat_id: '',
-          filtered_message: '',
-          message: final
-        });
-      } catch (e) { console.error('DC->MC send error:', e); }
-    } catch (e) { console.error('messageCreate handler error:', e); }
-  });
+    // transformar menções reais em @username para MC
+    const texto = msg.content.replace(/<@!?(\d+)>/g, (m, id) => {
+      const member = msg.guild.members.cache.get(id);
+      return member ? `@${member.user.username}` : '@usuario';
+    });
 
-  /* ---------- Web / misc ---------- */
+    const authorName = msg.author.username || 'Discord';
+
+    const final = `§1<${authorName}> ${texto}`;
+    mc.queue?.('text', {
+      type: 'chat',
+      needs_translation: false,
+      source_name: authorName,
+      xuid: '',
+      platform_chat_id: '',
+      filtered_message: '',
+      message: final
+    });
+
+  } catch (e) {
+    console.error('DC->MC handler error:', e);
+  }
+});
+
+/* ---------- Web / misc ---------- */
   const app = express();
   app.get("/", (req, res) => res.status(200).send("🤖 Bot rodando!"));
   app.listen(PORT, () => console.log(`🌐 Webserver na porta ${PORT}`));
