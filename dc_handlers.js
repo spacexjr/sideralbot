@@ -1,11 +1,14 @@
 // dc_handlers.js
 
 import {
-    ChannelType, EmbedBuilder
-} from 'discord.js';
-import { ping } from 'bedrock-protocol'; // ping é uma função standalone
+    ChannelType, EmbedBuilder, MessageFlags // Corrigido para MessageFlags
+} from 'discord.js'; 
+import { ping } from 'bedrock-protocol';
 import {
-    salvarConfig, salvarChat, carregarConfig, carregarChat
+    salvarConfig, salvarChat, carregarConfig, carregarChat,
+    // Importações de Economia e Vinculação
+    getBalance, updateBalance, getTopBalances,
+    vincularNick, getNickVinculado
 } from './db.js';
 import {
     conectarMinecraft, mcClients, conectando, tentativasReconexao, jogadoresOnline, getOrCreateLogThread, USUARIO_AUTORIZADO_ID
@@ -17,6 +20,14 @@ import { parseMentions } from './utils.js';
  */
 export async function handleInteraction(interaction, client) {
     if (!interaction.isChatInputCommand()) return;
+    
+    // Define se a resposta deve ser privada (ephemeral)
+    const PRIVATE_COMMANDS = ['setup', 'coins', 'pagar', 'vincular', 'status', 'sair'];
+    const isEphemeral = PRIVATE_COMMANDS.includes(interaction.commandName);
+
+    // ✅ CORREÇÃO: Chama deferReply usando MessageFlags para efêmero
+    await interaction.deferReply({ flags: isEphemeral ? MessageFlags.Ephemeral : undefined }); 
+    
     const { commandName, guildId, user, channelId } = interaction;
     if (!guildId) return;
     const ownerId = interaction.guild?.ownerId;
@@ -25,93 +36,152 @@ export async function handleInteraction(interaction, client) {
     // Verificação de Canais Permitidos (Se configurado)
     const canaisPermitidos = config?.canais || [];
     if (canaisPermitidos.length > 0 && !canaisPermitidos.includes(channelId)) {
-        return interaction.reply({ content: '❌ Comando não permitido neste canal.', ephemeral: true });
+        return interaction.editReply({ content: '❌ Comando não permitido neste canal.' });
     }
 
     // Comandos de Administração
     if (commandName === 'setup') {
-        if (user.id !== ownerId && user.id !== USUARIO_AUTORIZADO_ID) return interaction.reply({ content: '❌ Apenas dono/autorizado', ephemeral: true });
+        if (user.id !== ownerId && user.id !== USUARIO_AUTORIZADO_ID) return interaction.editReply({ content: '❌ Apenas dono/autorizado' });
+        
         const ip = interaction.options.getString('ip');
         const porta = interaction.options.getInteger('porta');
         const versao = interaction.options.getString('versao');
         const nick = interaction.options.getString('nick');
-        const canais = parseMentions(interaction.options.getString('canais'));
-        const cargos = parseMentions(interaction.options.getString('cargos')).slice(0, 5);
+        const canaisTexto = interaction.options.getString('canais');
+        const cargosTexto = interaction.options.getString('cargos');
+        const canais = canaisTexto ? parseMentions(canaisTexto) : [];
+        const cargos = cargosTexto ? parseMentions(cargosTexto) : [];
+
         await salvarConfig(guildId, ip, porta, versao, nick, canais, cargos);
-        try { conectarMinecraft(guildId, client); } catch (e) { /* ignore */ }
-        return interaction.reply({ content: `✅ Configuração salva.\nIP: \`${ip}\`\nPorta: \`${porta}\`\nVersão: \`${versao}\`\nNick: \`${nick}\``, ephemeral: false });
+        
+        try { conectarMinecraft(guildId, client, config, null); } catch (e) { /* ignore */ } 
+
+        return interaction.editReply({ content: `✅ Configurações salvas: IP: \`${ip}:${porta}\`, Nick: \`${nick}\`` });
     }
 
     if (commandName === 'entrar') {
-        if (user.id !== ownerId && user.id !== USUARIO_AUTORIZADO_ID) return interaction.reply({ content: '❌ Apenas dono/autorizado', ephemeral: true });
-        await interaction.deferReply();
-        conectarMinecraft(guildId, client, interaction);
-        return;
-    }
+        if (user.id !== ownerId && user.id !== USUARIO_AUTORIZADO_ID) return interaction.editReply({ content: '❌ Apenas dono/autorizado' }); 
+        if (!config) return interaction.editReply({ content: '❌ Configure o servidor primeiro usando `/setup`.' });
+        if (mcClients.has(guildId)) return interaction.editReply({ content: '❌ O bot já está conectado ao servidor.' });
+        if (conectando.has(guildId)) return interaction.editReply({ content: '⏳ O bot já está em processo de conexão.' });
 
+        await conectarMinecraft(guildId, client, config, interaction);
+        return; 
+    }
+    
     if (commandName === 'sair') {
+        if (user.id !== ownerId && user.id !== USUARIO_AUTORIZADO_ID) return interaction.editReply({ content: '❌ Apenas dono/autorizado' });
         const mc = mcClients.get(guildId);
-        const cargosPermitidos = config?.cargos?.slice(0, 5) || [];
-        const membro = interaction.member;
-        const temCargo = cargosPermitidos.length === 0 || cargosPermitidos.some(id => membro.roles.cache.has(id));
-        
-        if (!temCargo && interaction.user.id !== ownerId && interaction.user.id !== USUARIO_AUTORIZADO_ID) {
-            return interaction.reply({ content: '❌ Você não tem permissão', ephemeral: true });
-        }
-        
-        if (mc) {
-            try { mc.disconnect && mc.disconnect(); } catch (e) { /* ignore */ }
-            mcClients.delete(guildId);
-            conectando.delete(guildId);
-            tentativasReconexao.set(guildId, 10);
-            return interaction.reply({ content: '👋 Desconectado do servidor Minecraft.' });
-        }
-        return interaction.reply({ content: '⚠️ Não conectado.', ephemeral: true });
+        if (!mc) return interaction.editReply({ content: '❌ O bot não está conectado.' });
+
+        mc.close('Comando /sair');
+        mcClients.delete(guildId);
+        return interaction.editReply({ content: '✅ Desconectado com sucesso.' });
     }
 
     if (commandName === 'setchat') {
-        if (user.id !== ownerId && user.id !== USUARIO_AUTORIZADO_ID) return interaction.reply({ content: '❌ Apenas dono/autorizado', ephemeral: true });
-        const canais = parseMentions(interaction.options.getString('canais'));
-        if (!canais || canais.length === 0) return interaction.reply({ content: '❌ Nenhum canal válido', ephemeral: true });
-        const canal = client.channels.cache.get(canais[0]);
-        if (!canal || canal.type !== ChannelType.GuildText) return interaction.reply({ content: '❌ O canal precisa ser de texto', ephemeral: true });
-        
-        // Garante que o thread de log será criado/reaberto no novo canal
-        try { await getOrCreateLogThread(guildId, client); } catch (e) { console.error('thread create error on setchat:', e); }
-
+        if (user.id !== ownerId && user.id !== USUARIO_AUTORIZADO_ID) return interaction.editReply({ content: '❌ Apenas dono/autorizado' });
+        const canaisTexto = interaction.options.getString('canais');
+        const canais = parseMentions(canaisTexto);
         await salvarChat(guildId, canais);
-        return interaction.reply({ content: `✅ Canais salvos: <#${canais[0]}>`, ephemeral: false });
+        
+        let replyContent = `✅ Canais de chat salvos: ${canais.map(id => `<#${id}>`).join(', ') || 'Nenhum'}.`;
+        if (canais.length > 0) {
+            const logThread = await getOrCreateLogThread(guildId, client);
+            replyContent += `\n⚠️ Logs e status serão enviados para o primeiro canal (${canais[0]}) no thread \`「🔗」logs-mine\``;
+        }
+
+        return interaction.editReply({ content: replyContent });
+    }
+    
+    // Lógica dos Comandos de Economia
+    if (commandName === 'coins') {
+        const subCommand = interaction.options.getSubcommand();
+        if (subCommand === 'saldo') {
+            const balance = await getBalance(user.id);
+            return interaction.editReply({ content: `💰 Seu saldo atual é: **${balance} coins**` });
+        } else if (subCommand === 'top') {
+            const top = await getTopBalances(guildId, 10);
+            if (!top || top.length === 0) return interaction.editReply({ content: '❌ Ninguém no ranking ainda.' });
+
+            let rankingText = '';
+            for (let i = 0; i < top.length; i++) {
+                const { user_id, balance } = top[i];
+                const member = interaction.guild.members.cache.get(user_id);
+                const name = member ? member.displayName || member.user.username : `Usuário Desconhecido (${user_id})`; 
+                rankingText += `**${i + 1}.** ${name}: **${balance}** coins\n`;
+            }
+
+            const embed = new EmbedBuilder()
+                .setColor(0xffa500)
+                .setTitle('👑 Top 10 Ricos')
+                .setDescription(rankingText)
+                .setFooter({ text: 'Economy System' });
+
+            return interaction.editReply({ embeds: [embed] });
+        }
+    }
+    
+    if (commandName === 'pagar') {
+        const targetMember = interaction.options.getMember('membro');
+        const amount = interaction.options.getInteger('valor');
+        
+        if (!targetMember || targetMember.user.bot) return interaction.editReply({ content: '❌ Membro inválido para pagar.' });
+        if (targetMember.id === user.id) return interaction.editReply({ content: '❌ Você não pode pagar a si mesmo.' });
+        
+        const senderBalance = await getBalance(user.id);
+        if (senderBalance < amount) return interaction.editReply({ content: `❌ Saldo insuficiente. Você tem apenas **${senderBalance} coins**` });
+        
+        // Transação
+        await updateBalance(user.id, guildId, -amount); // Remover do remetente
+        await updateBalance(targetMember.id, guildId, amount); // Adicionar ao destinatário
+        
+        return interaction.editReply({ content: `✅ Você pagou **${amount} coins** para **${targetMember.user.username}**!` });
+    }
+
+    // Lógica do Comando de Vinculação
+    if (commandName === 'vincular') {
+        const mcNick = interaction.options.getString('nick');
+        const userId = user.id;
+
+        if (mcNick.length < 3) return interaction.editReply({ content: '❌ O Nickname deve ter pelo menos 3 caracteres.' });
+
+        const currentNick = await getNickVinculado(userId);
+        if (currentNick === mcNick.toLowerCase()) {
+            return interaction.editReply({ content: `ℹ️ Seu ID já está vinculado ao Nick **${mcNick}**.` });
+        }
+        
+        try {
+            await vincularNick(userId, mcNick);
+            return interaction.editReply({ content: `✅ Seu ID do Discord foi vinculado com sucesso ao Nick do Minecraft: **${mcNick}**` });
+        } catch (error) {
+            if (error.code === '23505' && error.constraint === 'nick_vincular_mc_nick_key') {
+                return interaction.editReply({ 
+                    content: '❌ Este Nickname do Minecraft já está vinculado a outro usuário do Discord.' 
+                });
+            }
+            console.error('Erro ao vincular nick:', error);
+            return interaction.editReply({ content: '❌ Ocorreu um erro interno ao tentar vincular seu Nickname.' });
+        }
     }
     
     // Comandos de Informação
     if (commandName === 'status') {
-        await interaction.deferReply();
-        const sent = await interaction.fetchReply();
-        const discordPing = sent.createdTimestamp - interaction.createdTimestamp;
-        const apiPing = client.ws.ping;
-        let serverStatus = "❌ Offline", botStatus = "❌ Desconectado", jogadoresTexto = "👥 Nenhum jogador online";
-        
-        if (config) {
-            try {
-                // Ping do Bedrock Server
-                const st = await ping({ host: config.host, port: config.port, timeout: 10000 });
-                if (st) {
-                    serverStatus = `✅ Online | ${st.playersOnline || 0}/${st.playersMax || 0}`;
-                    if (st.playersSample && st.playersSample.length > 0) jogadoresTexto = `👥 Jogadores: ${st.playersSample.map(p => p.name).join(', ')}`;
-                    else {
-                        const dados = jogadoresOnline.get(guildId) || new Map();
-                        const players = Array.from(dados.values()).filter(v => typeof v === 'string');
-                        if (players.length > 0) jogadoresTexto = `👥 Jogadores: ${players.join(', ')}`;
-                        if (dados.diasServidor !== undefined) jogadoresTexto += `\n⏳ Dias no servidor: ${dados.diasServidor}`;
-                    }
-                }
-            } catch (e) { serverStatus = '❌ Offline (erro no ping)'; }
-            if (mcClients.has(guildId)) botStatus = "✅ Conectado";
-        }
-        
-        return interaction.editReply(`🏓 **Pong!**\n📡 Discord: ${discordPing}ms\n🌐 API: ${apiPing}ms\n🎮 Servidor: ${serverStatus}\n🤖 Bot: ${botStatus}\n${jogadoresTexto}`);
-    }
+        if (!config) return interaction.editReply({ content: '❌ Configure o servidor primeiro usando `/setup`.' });
 
+        const mc = mcClients.get(guildId);
+        if (mc) {
+            return interaction.editReply({ content: `✅ Conectado em \`${config.host}:${config.port}\`. Status: Online. (Nick: ${mc.options.username})` });
+        }
+
+        try {
+            const data = await ping({ host: config.host, port: config.port, version: config.version });
+            return interaction.editReply({ content: `✅ Servidor \`${config.host}:${config.port}\` online. Jogadores: ${data.players.online}/${data.players.max}. Ping: ${data.latency}ms` });
+        } catch (e) {
+            return interaction.editReply({ content: `❌ Servidor \`${config.host}:${config.port}\` offline ou inacessível. ${e.message ? `(${e.message})` : ''}` });
+        }
+    }
+    
     if (commandName === 'baixar') {
         const embed = new EmbedBuilder()
             .setColor(0x8000ff)
@@ -122,12 +192,12 @@ export async function handleInteraction(interaction, client) {
                 { name: "✨ Actions & Stuff", value: "[Download](https://www.mediafire.com/file/7nhvp52l6hu1p09/Actions-and-Stuff-1.8.mcpack/file)" }
             )
             .setFooter({ text: "⚠️ by space" });
-        return interaction.reply({ embeds: [embed] });
+        return interaction.editReply({ embeds: [embed] });
     }
 }
 
 /**
- * Lida com mensagens do Discord para o chat do Minecraft.
+ ** Lida com mensagens do Discord para o chat do Minecraft.
  */
 export async function handleMessage(msg) {
     try {
