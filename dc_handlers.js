@@ -22,7 +22,6 @@ export async function handleInteraction(interaction, client) {
     if (!interaction.isChatInputCommand()) return;
     
     // Define se a resposta deve ser privada (ephemeral)
-    const PRIVATE_COMMANDS = ['setup', 'coins', 'pagar', 'vincular', 'status', 'sair'];
     const isEphemeral = PRIVATE_COMMANDS.includes(interaction.commandName);
 
     // ✅ CORREÇÃO: Chama deferReply usando MessageFlags para efêmero
