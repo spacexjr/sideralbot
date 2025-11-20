@@ -6,31 +6,31 @@ const { Pool } = pkg;
 
 // ---------- Pool de Conexão ----------
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
 });
 
 pool.on('error', (err, client) => {
-  console.error('❌ Erro inesperado no pool de conexões com o DB:', err.message, err.stack);
+    console.error('❌ Erro inesperado no pool de conexões com o DB:', err.message, err.stack);
 });
 
 // ---------- Funções de Conexão ----------
 export async function esperarPostgres(retries = 10, delay = 2000) {
-  for (let i = 1; i <= retries; i++) {
-    try {
-      await pool.query('SELECT 1');
-      console.log('📦 PostgreSQL online');
-      return;
-    } catch (e) {
-      console.log(`⏳ PostgreSQL iniciando... ${i}/${retries}`);
-      await sleep(delay);
+    for (let i = 1; i <= retries; i++) {
+        try {
+            await pool.query('SELECT 1');
+            console.log('📦 PostgreSQL online');
+            return;
+        } catch (e) {
+            console.log(`⏳ PostgreSQL iniciando... ${i}/${retries}`);
+            await sleep(delay);
+        }
     }
-  }
-  console.error('❌ PostgreSQL não iniciou após várias tentativas. Saindo.');
-  process.exit(1);
+    console.error('❌ PostgreSQL não iniciou após várias tentativas. Saindo.');
+    process.exit(1);
 }
 
 // ----------------------------------------------------------------------
@@ -38,7 +38,7 @@ export async function esperarPostgres(retries = 10, delay = 2000) {
 // ----------------------------------------------------------------------
 
 export async function salvarConfig(guildId, ip, porta, versao, nick, canais, cargos) {
-  await pool.query(`
+    await pool.query(`
     INSERT INTO configs (guild_id, host, port, version, nick, canais, cargos)
     VALUES ($1,$2,$3,$4,$5,$6,$7)
     ON CONFLICT (guild_id) DO UPDATE SET
@@ -48,12 +48,12 @@ export async function salvarConfig(guildId, ip, porta, versao, nick, canais, car
       nick = EXCLUDED.nick,
       canais = EXCLUDED.canais,
       cargos = EXCLUDED.cargos
-  `, [guildId, ip, porta, versao, nick, canais, cargos]);
+    `, [guildId, ip, porta, versao, nick, canais, cargos]);
 }
 
 export async function carregarConfig(guildId) {
-  const r = await pool.query("SELECT * FROM configs WHERE guild_id=$1", [guildId]);
-  return r.rows[0] || null;
+    const r = await pool.query("SELECT * FROM configs WHERE guild_id=$1", [guildId]);
+    return r.rows[0] || null;
 }
 
 // ----------------------------------------------------------------------
@@ -64,21 +64,21 @@ export async function carregarConfig(guildId) {
  * Cria a tabela de canais de chat se não existir.
  */
 export async function setupChatTable() {
-  await pool.query(`
+    await pool.query(`
     CREATE TABLE IF NOT EXISTS chat (
       guild_id VARCHAR(20) PRIMARY KEY,
       canais VARCHAR(20)[]
     );
-  `);
+    `);
 }
 
 export async function salvarChat(guildId, canais) {
-  await pool.query(`INSERT INTO chat (guild_id, canais) VALUES ($1,$2) ON CONFLICT (guild_id) DO UPDATE SET canais = EXCLUDED.canais`, [guildId, canais]);
+    await pool.query(`INSERT INTO chat (guild_id, canais) VALUES ($1,$2) ON CONFLICT (guild_id) DO UPDATE SET canais = EXCLUDED.canais`, [guildId, canais]);
 }
 
 export async function carregarChat(guildId) {
-  const r = await pool.query("SELECT canais FROM chat WHERE guild_id=$1", [guildId]);
-  return r.rows[0]?.canais || [];
+    const r = await pool.query("SELECT canais FROM chat WHERE guild_id=$1", [guildId]);
+    return r.rows[0]?.canais || [];
 }
 
 // ----------------------------------------------------------------------
@@ -89,13 +89,13 @@ export async function carregarChat(guildId) {
  * Cria a tabela de saldos (economy) se não existir.
  */
 export async function setupEconomyTable() {
-  await pool.query(`
+    await pool.query(`
     CREATE TABLE IF NOT EXISTS economy (
       user_id VARCHAR(20) PRIMARY KEY,
       guild_id VARCHAR(20) NOT NULL,
       balance BIGINT DEFAULT 0
     );
-  `);
+    `);
 }
 
 /**
@@ -104,8 +104,8 @@ export async function setupEconomyTable() {
  * @returns {number}
  */
 export async function getBalance(userId) {
-  const r = await pool.query("SELECT balance FROM economy WHERE user_id=$1", [userId]);
-  return parseInt(r.rows[0]?.balance) || 0; 
+    const r = await pool.query("SELECT balance FROM economy WHERE user_id=$1", [userId]);
+    return parseInt(r.rows[0]?.balance) || 0; 
 }
 
 /**
@@ -116,12 +116,12 @@ export async function getBalance(userId) {
  * @param {number} amount
  */
 export async function updateBalance(userId, guildId, amount) {
-  await pool.query(`
+    await pool.query(`
     INSERT INTO economy (user_id, guild_id, balance)
     VALUES ($1, $2, $3)
     ON CONFLICT (user_id) DO UPDATE SET
       balance = economy.balance + EXCLUDED.balance
-  `, [userId, guildId, amount]);
+    `, [userId, guildId, amount]);
 }
 
 /**
@@ -144,12 +144,12 @@ export async function getTopBalances(guildId, limit = 10) {
  * Cria a tabela de vinculação de nicks MC se não existir.
  */
 export async function setupNickTable() {
-  await pool.query(`
+    await pool.query(`
     CREATE TABLE IF NOT EXISTS nick_vincular (
       user_id VARCHAR(20) PRIMARY KEY,
       mc_nick TEXT UNIQUE NOT NULL
     );
-  `);
+    `);
 }
 
 /**
@@ -158,12 +158,12 @@ export async function setupNickTable() {
  * @param {string} mcNick 
  */
 export async function vincularNick(userId, mcNick) {
-  await pool.query(`
+    await pool.query(`
     INSERT INTO nick_vincular (user_id, mc_nick)
     VALUES ($1, $2)
     ON CONFLICT (user_id) DO UPDATE SET
       mc_nick = EXCLUDED.mc_nick
-  `, [userId, mcNick.toLowerCase()]); // Salva em minúsculas para consistência
+    `, [userId, mcNick.toLowerCase()]); // Salva em minúsculas para consistência
 }
 
 /**
@@ -172,8 +172,8 @@ export async function vincularNick(userId, mcNick) {
  * @returns {string | null}
  */
 export async function getNickVinculado(userId) {
-  const r = await pool.query("SELECT mc_nick FROM nick_vincular WHERE user_id=$1", [userId]);
-  return r.rows[0]?.mc_nick || null;
+    const r = await pool.query("SELECT mc_nick FROM nick_vincular WHERE user_id=$1", [userId]);
+    return r.rows[0]?.mc_nick || null;
 }
 
 /**
@@ -182,8 +182,17 @@ export async function getNickVinculado(userId) {
  * @returns {string | null}
  */
 export async function getUserIdByNick(mcNick) {
-  const r = await pool.query("SELECT user_id FROM nick_vincular WHERE mc_nick=$1", [mcNick.toLowerCase()]);
-  return r.rows[0]?.user_id || null;
+    const r = await pool.query("SELECT user_id FROM nick_vincular WHERE mc_nick=$1", [mcNick.toLowerCase()]);
+    return r.rows[0]?.user_id || null;
+} // <-- ✅ CHAVE DE FECHAMENTO ADICIONADA AQUI
+
+// ----------------------------------------------------------------------
+// ---------- Funções de Conexão/Manutenção (Keep-Alive) ----------
+// ----------------------------------------------------------------------
+
+/**
+ * Executa uma consulta simples para manter a conexão ativa (Keep-Alive) no Pool.
+ */
 export async function checkDbConnection() {
     // A consulta 'SELECT 1' é a maneira mais leve e eficiente de testar/manter a conexão.
     await pool.query('SELECT 1');
