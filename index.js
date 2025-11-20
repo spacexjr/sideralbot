@@ -10,11 +10,12 @@ import {
     setupChatTable, 
     setupNickTable, 
     updateBalance, 
-    getUserIdByNick // NOVO: Para buscar o ID do Discord pelo Nick MC
+    getUserIdByNick,
+    checkDbConnection // ✅ Importado para o Keep-Alive
 } from './db.js';
 import { commands } from './dc_commands.js';
 import { handleInteraction, handleMessage } from './dc_handlers.js';
-import { setAuthUserId, mcClients, jogadoresOnline } from './mc_client.js'; // NOVO: Importa jogadoresOnline
+import { setAuthUserId, mcClients, jogadoresOnline } from './mc_client.js';
 
 /* ---------- Config / Variáveis de Ambiente ---------- */
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -26,7 +27,6 @@ setAuthUserId(USUARIO_AUTORIZADO_ID);
 
 /* ---------- Discord client (OTIMIZADO) ---------- */
 const client = new Client({
-    // ... (configurações do client)
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
@@ -54,9 +54,20 @@ const client = new Client({
     
     // 1.1 Garante que as tabelas necessárias existem
     await setupEconomyTable(); 
-    await setupChatTable();    
-    await setupNickTable();    
+    await setupChatTable();     
+    await setupNickTable();     
     
+    // 1.2 ⏰ ADICIONADO: KEEP-ALIVE PARA RAILWAY
+    // Executa uma consulta simples a cada 9 minutos para manter o DB ativo.
+    setInterval(async () => {
+        try {
+            await checkDbConnection();
+            console.log('💚 [DB] Keep-Alive: Conexão com o PostgreSQL mantida ativa.');
+        } catch (e) {
+            console.error('💔 [DB] Keep-Alive falhou. Banco de dados pode ter adormecido.', e.message);
+        }
+    }, 120000); // 2 min
+
     // 2. Registro de Comandos Slash (Global)
     try {
         const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
