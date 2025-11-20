@@ -184,4 +184,7 @@ export async function getNickVinculado(userId) {
 export async function getUserIdByNick(mcNick) {
   const r = await pool.query("SELECT user_id FROM nick_vincular WHERE mc_nick=$1", [mcNick.toLowerCase()]);
   return r.rows[0]?.user_id || null;
+export async function checkDbConnection() {
+    // A consulta 'SELECT 1' é a maneira mais leve e eficiente de testar/manter a conexão.
+    await pool.query('SELECT 1');
 }
