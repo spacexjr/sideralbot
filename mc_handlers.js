@@ -1,5 +1,3 @@
-// mc_handlers.js
-
 import { ChannelType } from 'discord.js';
 import { carregarChat } from './db.js';
 import { 
@@ -154,4 +152,93 @@ export function attachMcHandlers(mc, guildId, client, config, sendLog) {
             jogadoresOnline.set(guildId, dados);
         } catch (e) { /* ignore */ }
     });
+}
+
+// ---------------------------------------------------------------------
+
+/**
+ * Manipula o comando /status do Discord, gerando um Embed detalhado
+ * como o da imagem fornecida.
+ * @param {import('discord.js').Interaction} interaction A interação de comando.
+ * @param {import('discord.js').Client} client O cliente Discord.
+ * @param {string} guildId O ID da guilda.
+ */
+export async function handleStatusCommand(interaction, client, guildId) {
+    // A interação já deve ter sido deferida em dc_handlers.js
+
+    const mcClient = mcClients.get(guildId);
+    const mcIsConnected = mcClient && mcClient.connected;
+    const isConnecting = conectando.has(guildId); 
+
+    // Dados do jogador/dias
+    const jogadoresData = jogadoresOnline.get(guildId) || new Map();
+    // Filtra jogadores. O mapa deve conter apenas nomes de jogadores como valores (strings).
+    const jogadores = Array.from(jogadoresData.values()).filter(name => typeof name === 'string' && name !== 'Jogador'); 
+    
+    const diasServidor = jogadoresData.diasServidor !== undefined ? jogadoresData.diasServidor : 'N/A';
+    const numJogadores = jogadores.length;
+    const listaJogadores = jogadores.length > 0 ? jogadores.join(', ') : 'Nenhum';
+    const tentativas = tentativasReconexao.get(guildId) || 0;
+
+    let botStatusEmoji;
+    let botStatusText;
+
+    if (mcIsConnected) {
+        botStatusEmoji = '✅';
+        botStatusText = 'Conectado';
+    } else if (isConnecting) {
+        botStatusEmoji = '🔄';
+        botStatusText = `Reconectando (${tentativas}ª tentativa)`;
+    } else {
+        botStatusEmoji = '❌';
+        botStatusText = 'Desconectado';
+    }
+
+    // Calcular a latência do Discord (ping)
+    const discordPing = client.ws.ping;
+
+    // Ping da API: Usando placeholder conforme a imagem (28ms) quando conectado, senão N/A.
+    const apiPing = mcIsConnected ? 28 : 'N/A';
+
+    // Limite de jogadores do servidor (hardcoded como 20, conforme a imagem e ausência de dados de config)
+    const limiteJogadores = 20;
+
+    const embed = {
+        color: mcIsConnected ? 0x2ecc71 : 0xffa500, // Verde se online, Laranja se offline/conectando
+        title: '🏓 Pong!',
+        author: {
+            name: `${interaction.user.username} usou`,
+            icon_url: interaction.user.displayAvatarURL(),
+        },
+        timestamp: new Date().toISOString(),
+        fields: [
+            {
+                name: '🛰️ Discord',
+                value: `${discordPing}ms`,
+                inline: true,
+            },
+            {
+                name: '🎮 Servidor',
+                value: ` ${numJogadores}/${limiteJogadores}`,
+                inline: false,
+            },
+            {
+                name: '👥 Jogadores',
+                value: listaJogadores,
+                inline: false,
+            },
+            {
+                name: '⏳ Dias no servidor',
+                value: `${diasServidor}`,
+                inline: false,
+            },
+        ],
+    };
+
+    try {
+        await interaction.editReply({ embeds: [embed] });
+    } catch (e) {
+        console.error('Erro ao enviar /status:', e);
+        await interaction.editReply({ content: '❌ Ocorreu um erro ao obter o status.' }).catch(() => {});
+    }
 }
