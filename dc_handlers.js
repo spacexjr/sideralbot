@@ -83,9 +83,8 @@ export async function handleInteraction(interaction, client) {
         if (!config) return interaction.editReply({ content: '❌ Configure o servidor primeiro usando `/setup`.' });
         if (mcClients.has(guildId)) return interaction.editReply({ content: '⚠️ O bot já está conectado ao servidor.', ephemeral: true });
 
-        // A função conectarMinecraft já lida com o defer e editReply/followUp no caso de sucesso/erro
-        await conectarMinecraft(guildId, client, interaction, config);
-        // O reply final é feito dentro de conectarMinecraft
+        // Passa o config explicitamente
+        await conectarMinecraft(guildId, client, config, interaction);
         return;
     }
     
@@ -122,7 +121,7 @@ export async function handleInteraction(interaction, client) {
     if (commandName === 'status') {
         if (!config) return interaction.editReply({ content: '❌ Configure o servidor primeiro usando `/setup`.' });
         
-        // NOVO: Chama a função que gera o Embed detalhado (como na foto).
+        // NOVO: Chama a função que gera o Embed detalhado
         await handleStatusCommand(interaction, client, guildId);
         return;
     }

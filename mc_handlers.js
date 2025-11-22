@@ -1,13 +1,37 @@
-import { ChannelType } from 'discord.js';
-import { carregarChat } from './db.js';
+import { ChannelType, EmbedBuilder } from 'discord.js';
+import { ping } from 'bedrock-protocol';
+import { carregarChat, carregarConfig } from './db.js';
 import { 
     jogadoresOnline, 
     getOrCreateLogThread, 
     tentativasReconexao, 
     mcClients, 
     conectando,
-    USUARIO_AUTORIZADO_ID // Importado do mc_client, que o mc_client importa do index.js
+    USUARIO_AUTORIZADO_ID
 } from './mc_client.js';
+
+
+/**
+ * Testa o servidor Minecraft usando ping.
+ */
+async function testarServidor(config) {
+    try {
+        const status = await ping({ 
+            host: config.host, 
+            port: config.port, 
+            timeout: 10000 
+        });
+        return { 
+            online: true, 
+            jogadores: status.playersOnline || 0, 
+            max: status.playersMax || 20, 
+            playersSample: status.playersSample || [] 
+        };
+    } catch (err) {
+        console.error('Erro ao pingar servidor:', err.message);
+        return { online: false };
+    }
+}
 
 
 /**
@@ -52,18 +76,18 @@ export function attachMcHandlers(mc, guildId, client, config, sendLog) {
             const noColor = raw.replace(/§[0-9a-fklmnor]/gi, '').trim();
             const params = packet.parameters || [];
 
-            // 1. Deteção de Join/Leave
+            // 1. Detecção de Join/Leave
             const isJoin = /%multiplayer\.player\.joined/i.test(raw) || / entrou no jogo$/i.test(noColor) || / joined the game$/i.test(noColor);
             const isLeave = /%multiplayer\.player\.left/i.test(raw) || / saiu do jogo$/i.test(noColor) || / left the game$/i.test(noColor);
             const playerName = params[0] || packet.source_name || 'Jogador';
 
-            // 2. Deteção de Morte (type: translation ou chave/texto)
+            // 2. Detecção de Morte (type: translation ou chave/texto)
             const isDeathKey = raw.toLowerCase().includes('death.attack.');
             const isDeathText = noColor.toLowerCase().includes('morreu') || noColor.toLowerCase().includes('died');
             const isTranslationDeath = packet.type === 'translation' && raw.startsWith('death.'); 
             const isDeath = isDeathKey || isDeathText || isTranslationDeath;
 
-            // 3. Deteção de outros eventos de sistema (Avances, Tips)
+            // 3. Detecção de outros eventos de sistema (Avances, Tips)
             const isSystemEvent = (packet.type === 'system' || packet.type === 'tip' || packet.type === 'announcement') && !isJoin && !isLeave && !isDeath;
             const isAdvancement = isSystemEvent && (raw.startsWith('%') || noColor.toLowerCase().includes('concluiu o desafio') || noColor.toLowerCase().includes('achievement'));
 
@@ -157,83 +181,94 @@ export function attachMcHandlers(mc, guildId, client, config, sendLog) {
 // ---------------------------------------------------------------------
 
 /**
- * Manipula o comando /status do Discord, gerando um Embed detalhado
- * como o da imagem fornecida.
+ * Manipula o comando /status do Discord, gerando informações completas.
  * @param {import('discord.js').Interaction} interaction A interação de comando.
  * @param {import('discord.js').Client} client O cliente Discord.
  * @param {string} guildId O ID da guilda.
  */
 export async function handleStatusCommand(interaction, client, guildId) {
-    // A interação já deve ter sido deferida em dc_handlers.js
-
-    const mcClient = mcClients.get(guildId);
-    const mcIsConnected = mcClient && mcClient.connected;
-    const isConnecting = conectando.has(guildId); 
-
-    // Dados do jogador/dias
-    const jogadoresData = jogadoresOnline.get(guildId) || new Map();
-    // Filtra jogadores. O mapa deve conter apenas nomes de jogadores como valores (strings).
-    const jogadores = Array.from(jogadoresData.values()).filter(name => typeof name === 'string' && name !== 'Jogador'); 
+    // Pegar timestamp inicial para calcular ping do Discord
+    const sent = interaction.createdTimestamp;
     
-    const diasServidor = jogadoresData.diasServidor !== undefined ? jogadoresData.diasServidor : 'N/A';
-    const numJogadores = jogadores.length;
-    const listaJogadores = jogadores.length > 0 ? jogadores.join(', ') : 'Nenhum';
+    // Carregar config
+    const config = await carregarConfig(guildId);
+    if (!config) {
+        return interaction.editReply('⚠️ Use `/setup` primeiro.');
+    }
+
+    // Dados do bot - verificar se mcClient existe e está conectado
+    const mcClient = mcClients.get(guildId);
+    const mcIsConnected = !!(mcClient && !mcClient.closed);
+    const isConnecting = conectando.has(guildId);
     const tentativas = tentativasReconexao.get(guildId) || 0;
 
-    let botStatusEmoji;
-    let botStatusText;
+    // Testar servidor via ping
+    const serverTest = await testarServidor(config);
+    
+    // Status do servidor
+    let serverStatus = "❌ Offline";
+    let serverStatusColor = 0xe74c3c; // Vermelho
+    
+    if (serverTest.online) {
+        serverStatus = `✅ Online | ${serverTest.jogadores}/${serverTest.max}`;
+        serverStatusColor = 0x2ecc71; // Verde
+    }
 
+    // Status do bot
+    let botStatusEmoji, botStatusText;
     if (mcIsConnected) {
         botStatusEmoji = '✅';
         botStatusText = 'Conectado';
     } else if (isConnecting) {
         botStatusEmoji = '🔄';
         botStatusText = `Reconectando (${tentativas}ª tentativa)`;
+        serverStatusColor = 0xffa500; // Laranja
     } else {
         botStatusEmoji = '❌';
         botStatusText = 'Desconectado';
     }
 
-    // Calcular a latência do Discord (ping)
-    const discordPing = client.ws.ping;
+    // Informações de jogadores
+    const dados = jogadoresOnline.get(guildId) || new Map();
+    let jogadoresTexto = "👥 Nenhum jogador online";
+    
+    // Priorizar playersSample do ping se disponível
+    if (serverTest.playersSample && serverTest.playersSample.length > 0) {
+        const nomes = serverTest.playersSample.map(p => p.name).join(', ');
+        jogadoresTexto = `👥 Jogadores: ${nomes}`;
+    } else if (dados.size > 0) {
+        const jogadores = Array.from(dados.values()).filter(name => typeof name === 'string' && name !== 'Jogador');
+        if (jogadores.length > 0) {
+            jogadoresTexto = `👥 Jogadores: ${jogadores.join(', ')}`;
+        }
+    }
 
-    // Ping da API: Usando placeholder conforme a imagem (28ms) quando conectado, senão N/A.
-    const apiPing = mcIsConnected ? 28 : 'N/A';
+    // Dias do servidor
+    let diasInfo = '';
+    if (dados.diasServidor !== undefined) {
+        diasInfo = `\n⏳ Dias no servidor: ${dados.diasServidor}`;
+    }
 
-    // Limite de jogadores do servidor (hardcoded como 20, conforme a imagem e ausência de dados de config)
-    const limiteJogadores = 20;
+    // Pings
+    const discordPing = Date.now() - sent;
+    const apiPing = client.ws.ping;
 
-    const embed = {
-        color: mcIsConnected ? 0x2ecc71 : 0xffa500, // Verde se online, Laranja se offline/conectando
-        title: '🏓 Pong!',
-        author: {
-            name: `${interaction.user.username} usou`,
-            icon_url: interaction.user.displayAvatarURL(),
-        },
-        timestamp: new Date().toISOString(),
-        fields: [
-            {
-                name: '🛰️ Discord',
-                value: `${discordPing}ms`,
-                inline: true,
-            },
-            {
-                name: '🎮 Servidor',
-                value: ` ${numJogadores}/${limiteJogadores}`,
-                inline: false,
-            },
-            {
-                name: '👥 Jogadores',
-                value: listaJogadores,
-                inline: false,
-            },
-            {
-                name: '⏳ Dias no servidor',
-                value: `${diasServidor}`,
-                inline: false,
-            },
-        ],
-    };
+    // Criar embed
+    const embed = new EmbedBuilder()
+        .setColor(serverStatusColor)
+        .setTitle('🏓 Pong!')
+        .setDescription(
+            `📡 **Discord**: ${discordPing}ms\n` +
+            `🌐 **API**: ${apiPing}ms\n` +
+            `🎮 **Servidor**: ${serverStatus}\n` +
+            `🤖 **Bot**: ${botStatusEmoji} ${botStatusText}\n` +
+            `${jogadoresTexto}${diasInfo}`
+        )
+        .setTimestamp()
+        .setFooter({ 
+            text: `Requisitado por ${interaction.user.username}`,
+            iconURL: interaction.user.displayAvatarURL()
+        });
 
     try {
         await interaction.editReply({ embeds: [embed] });
