@@ -37,4 +37,8 @@ export const commands = [
   new SlashCommandBuilder().setName('vincular').setDescription('Vincula seu ID do Discord a um Nickname do Minecraft')
     .addStringOption(o => o.setName('nick').setDescription('Seu nickname exato do Minecraft Bedrock/Java').setRequired(true)),
   
+    // zoeira //
+   // Comando: /drakinho
+  new SlashCommandBuilder().setName('drakinho').setDescription('Mostra uma imagem do Drakinho 🐉'),
+  
 ].map(c => c.toJSON()); // Mantenha o .map(c => c.toJSON())
