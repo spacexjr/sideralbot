@@ -16,10 +16,11 @@
   "author": "space",
   "license": "MIT",
   "dependencies": {
-    "bedrock-protocol": "github:PrismarineJS/bedrock-protocol"
+    "bedrock-protocol": "github:PrismarineJS/bedrock-protocol",
     "discord.js": "^14.14.1",
     "dotenv": "^17.2.1",
     "pg": "^8.13.0"
   }
 }
+
 
