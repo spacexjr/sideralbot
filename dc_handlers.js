@@ -210,6 +210,9 @@ export async function handleInteraction(interaction, client) {
 /**
  ** Lida com mensagens do Discord para o chat do Minecraft.
  */
+/**
+ * Lida com mensagens do Discord para o chat do Minecraft.
+ */
 export async function handleMessage(msg) {
     try {
         if (msg.author.bot || !msg.guildId) return;
@@ -218,24 +221,26 @@ export async function handleMessage(msg) {
         if (!canais || !canais.includes(msg.channelId)) return;
 
         const mc = mcClients.get(msg.guildId);
-        if (!mc || mc.closed) return;
+        if (!mc || mc.status !== 'online') return; // Verifica se está realmente pronto
 
-        // Transforma menções reais em @username para MC
-        const texto = msg.content.replace(/<@!?(\d+)>/g, (m, id) => {
+        // 1. Limpa menções e limita o tamanho da mensagem para evitar pacotes malformados
+        let texto = msg.content.replace(/<@!?(\d+)>/g, (m, id) => {
             const member = msg.guild.members.cache.get(id);
             return member ? `@${member.user.username}` : '@usuario';
-        });
+        }).slice(0, 250); // O limite de chat do MC costuma ser próximo a isso
 
-        const authorName = msg.author.username || 'Discord';
-const final = `<${authorName}> ${texto}`;
-mc.chat(final);
-console.log('[DEBUG PACKET]', JSON.stringify(packet));
-try {
-    mc.write('text', packet);
-} catch(e) {
-    console.error('[WRITE ERROR]', e);
-}
+        if (texto.length === 0 && !msg.attachments.size) return;
+
+        // 2. Formata a mensagem
+        const authorName = msg.member?.displayName || msg.author.username;
+        const mensagemFinal = `<${authorName}> ${texto}`;
+
+        // 3. Envia usando o método simplificado (o bedrock-protocol cuida do pacote 'text')
+        mc.chat(mensagemFinal);
+
+        console.log(`[DC->MC] ${msg.guild.name}: ${mensagemFinal}`);
+
     } catch (e) {
-        console.error('DC->MC handler error:', e);
+        console.error('Erro no handler DC->MC:', e.message);
     }
 }
