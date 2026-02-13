@@ -90,7 +90,6 @@ async function tentarReconectar(guildId, client) {
     sendLogMessage(guildId, client, `⏳ Tentando reconectar (Tentativa ${attempts}/${MAX_TENTATIVAS}) em ${DELAY_MS / 1000}s...`);
     
     setTimeout(async () => {
-        // Tenta a conexão, sem a interação do Discord.
         await conectarMinecraft(guildId, client, config, null); 
         conectando.delete(guildId);
     }, DELAY_MS);
@@ -98,15 +97,10 @@ async function tentarReconectar(guildId, client) {
 
 /**
  * Conecta o bot ao servidor Minecraft.
- * @param {string} guildId 
- * @param {import('discord.js').Client} client 
- * @param {*} config - Configuração do servidor (opcional, será carregada se não fornecida)
- * @param {import('discord.js').ChatInputCommandInteraction | null} interaction 
  */
 export async function conectarMinecraft(guildId, client, config = null, interaction = null) {
     const sendLog = (message) => sendLogMessage(guildId, client, message);
     
-    // Carrega config se não foi fornecida
     if (!config) {
         config = await carregarConfig(guildId);
         if (!config) {
@@ -119,7 +113,6 @@ export async function conectarMinecraft(guildId, client, config = null, interact
         }
     }
     
-    // Valida configuração
     if (!config.host || !config.port || !config.nick) {
         console.error(`[MC] Configuração inválida para guild ${guildId}:`, config);
         if (interaction && interaction.deferred) {
@@ -129,7 +122,6 @@ export async function conectarMinecraft(guildId, client, config = null, interact
         return;
     }
     
-    // Verifica se já está conectado
     if (mcClients.has(guildId)) {
         const existingClient = mcClients.get(guildId);
         if (existingClient && !existingClient.closed) {
@@ -140,15 +132,11 @@ export async function conectarMinecraft(guildId, client, config = null, interact
             }
             return;
         } else {
-            // Remove cliente morto
             mcClients.delete(guildId);
         }
     }
     
-    // Marca como conectando para evitar múltiplas chamadas
     conectando.add(guildId);
-    
-    // Inicializa o Map de jogadores online para esta guilda
     jogadoresOnline.set(guildId, new Map());
 
     try {
@@ -163,16 +151,18 @@ export async function conectarMinecraft(guildId, client, config = null, interact
             offline: true,
         });
 
-        // Adiciona ao mapa IMEDIATAMENTE após criar
         mcClients.set(guildId, mc);
         
-        // Log de sucesso de conexão (spawn)
         mc.once('spawn', () => {
             console.log(`[MC] Guild ${guildId} spawnou no servidor.`);
-            tentativasReconexao.set(guildId, 0); // Reset tentativas
-            conectando.delete(guildId); // Remove do set de conectando
             
-            // Garante que a interação existe e foi deferida (respondida)
+            // ✅ LOG DE MÉTODOS DISPONÍVEIS
+            const proto = Object.getOwnPropertyNames(Object.getPrototypeOf(mc));
+            console.log('[MC METHODS]', proto);
+
+            tentativasReconexao.set(guildId, 0);
+            conectando.delete(guildId);
+            
             if (interaction && interaction.deferred) { 
                 interaction.editReply(`✅ Conectado em \`${config.host}:${config.port}\` como \`${config.nick}\``)
                     .catch(e => console.error("Erro ao dar feedback no Discord após conectar:", e.message));
@@ -181,11 +171,10 @@ export async function conectarMinecraft(guildId, client, config = null, interact
             sendLog(`🟩 Conectado em ${config.host}:${config.port} como ${config.nick}`);
         });
 
-        // Anexa os handlers de eventos
         attachMcHandlers(mc, guildId, client, config, sendLog);
 
-        // Handler de desconexão
         mc.on('disconnect', packet => {
+            console.log(`[DISCONNECT FULL]`, JSON.stringify(packet));
             console.log(`[MC] Guild ${guildId} desconectou:`, packet?.reason || packet?.message || 'Sem mensagem');
             mcClients.delete(guildId);
             conectando.delete(guildId);
@@ -193,30 +182,25 @@ export async function conectarMinecraft(guildId, client, config = null, interact
             const reason = packet?.reason || packet?.message || 'Desconectado';
             sendLog(`🟥 **Desconectado:** ${reason}`);
             
-            // Tenta reconectar, exceto se for desconexão manual
             if (reason !== 'Comando /sair' && !reason.includes('disconnect.kicked')) {
                 tentarReconectar(guildId, client); 
             } else {
-                tentativasReconexao.set(guildId, 0); // Reset se for kick/manual
+                tentativasReconexao.set(guildId, 0);
             }
         });
 
-        // Handler de erro
         mc.on('error', err => {
             console.error(`[MC] Guild ${guildId} error:`, err?.message || err);
             sendLog(`❌ **Erro de conexão:** ${err?.message || String(err)}`);
             
-            // Remove do mapa se erro crítico
             if (mcClients.get(guildId) === mc) {
                 mcClients.delete(guildId);
             }
             conectando.delete(guildId);
             
-            // Tenta reconectar
             tentarReconectar(guildId, client);
         });
 
-        // Handler de close
         mc.on('close', () => {
             console.log(`[MC] Guild ${guildId} conexão fechada.`);
             if (mcClients.get(guildId) === mc) {
@@ -225,20 +209,16 @@ export async function conectarMinecraft(guildId, client, config = null, interact
         });
 
     } catch (err) { 
-        // Captura erros síncronos de createClient
         console.error('[MC] conectarMinecraft catch (Síncrono):', err);
-        mcClients.delete(guildId); // Remove qualquer resíduo
+        mcClients.delete(guildId);
         conectando.delete(guildId);
 
-        // Envia a resposta de erro para a interação do Discord
         if (interaction && interaction.deferred) {
              interaction.editReply(`❌ Erro ao iniciar a conexão ao servidor ${config.host}:${config.port}: ${err.message}`)
                  .catch(e => console.error("Erro ao dar feedback de falha de conexão:", e.message));
         }
         
         sendLog(`❌ Erro crítico ao conectar: ${err.message}`);
-        
-        // Lógica de reconexão
         tentarReconectar(guildId, client);
     }
 }

@@ -22,7 +22,7 @@ export async function handleInteraction(interaction, client) {
     if (!interaction.isChatInputCommand()) return;
     
     // Define se a resposta deve ser privada (ephemeral)
-    const PRIVATE_COMMANDS = ['setup', 'coins', 'pagar', 'vincular', 'status', 'sair'];
+    const PRIVATE_COMMANDS = ['setup'];
     const isEphemeral = PRIVATE_COMMANDS.includes(interaction.commandName);
 
     // ✅ CORREÇÃO: Chama deferReply usando MessageFlags para efêmero
@@ -218,27 +218,23 @@ export async function handleMessage(msg) {
         if (!canais || !canais.includes(msg.channelId)) return;
 
         const mc = mcClients.get(msg.guildId);
-        if (!mc) return;
+        if (!mc || mc.closed) return;
 
-        // transformar menções reais em @username para MC
+        // Transforma menções reais em @username para MC
         const texto = msg.content.replace(/<@!?(\d+)>/g, (m, id) => {
             const member = msg.guild.members.cache.get(id);
             return member ? `@${member.user.username}` : '@usuario';
         });
 
         const authorName = msg.author.username || 'Discord';
-
-        const final = `§1<${authorName}> ${texto}`;
-        mc.queue?.('text', {
-            type: 'chat',
-            needs_translation: false,
-            source_name: authorName,
-            xuid: '',
-            platform_chat_id: '',
-            filtered_message: '',
-            message: final
-        });
-
+const final = `<${authorName}> ${texto}`;
+mc.chat(final);
+console.log('[DEBUG PACKET]', JSON.stringify(packet));
+try {
+    mc.write('text', packet);
+} catch(e) {
+    console.error('[WRITE ERROR]', e);
+}
     } catch (e) {
         console.error('DC->MC handler error:', e);
     }
