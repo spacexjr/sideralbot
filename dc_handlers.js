@@ -3,7 +3,6 @@
 import {
     ChannelType, EmbedBuilder, MessageFlags // Corrigido para MessageFlags
 } from 'discord.js'; 
-import { ping } from 'bedrock-protocol';
 import {
     salvarConfig, salvarChat, carregarConfig, carregarChat,
     // Importações de Economia e Vinculação
@@ -13,6 +12,7 @@ import {
 import {
     conectarMinecraft, mcClients, conectando, tentativasReconexao, jogadoresOnline, getOrCreateLogThread, USUARIO_AUTORIZADO_ID
 } from './mc_client.js';
+import { handleStatusCommand } from './mc_handlers.js';
 import { parseMentions } from './utils.js';
 
 /**
@@ -53,8 +53,16 @@ export async function handleInteraction(interaction, client) {
         const cargos = cargosTexto ? parseMentions(cargosTexto) : [];
 
         await salvarConfig(guildId, ip, porta, versao, nick, canais, cargos);
-        
-        try { conectarMinecraft(guildId, client, config, null); } catch (e) { /* ignore */ } 
+
+        const novaConfig = {
+            host: ip,
+            port: porta,
+            version: versao,
+            nick,
+            canais,
+            cargos
+        };
+        conectarMinecraft(guildId, client, novaConfig, null).catch(() => {});
 
         return interaction.editReply({ content: `✅ Configurações salvas: IP: \`${ip}:${porta}\`, Nick: \`${nick}\`` });
     }
@@ -62,7 +70,13 @@ export async function handleInteraction(interaction, client) {
     if (commandName === 'entrar') {
         if (user.id !== ownerId && user.id !== USUARIO_AUTORIZADO_ID) return interaction.editReply({ content: '❌ Apenas dono/autorizado' }); 
         if (!config) return interaction.editReply({ content: '❌ Configure o servidor primeiro usando `/setup`.' });
-        if (mcClients.has(guildId)) return interaction.editReply({ content: '❌ O bot já está conectado ao servidor.' });
+        const existente = mcClients.get(guildId);
+        if (existente && !existente.closed) {
+            return interaction.editReply({ content: '❌ O bot já está conectado ao servidor.' });
+        }
+        if (existente && existente.closed) {
+            mcClients.delete(guildId);
+        }
         if (conectando.has(guildId)) return interaction.editReply({ content: '⏳ O bot já está em processo de conexão.' });
 
         await conectarMinecraft(guildId, client, config, interaction);
@@ -167,19 +181,7 @@ export async function handleInteraction(interaction, client) {
     
     // Comandos de Informação
     if (commandName === 'status') {
-        if (!config) return interaction.editReply({ content: '❌ Configure o servidor primeiro usando `/setup`.' });
-
-        const mc = mcClients.get(guildId);
-        if (mc) {
-            return interaction.editReply({ content: `✅ Conectado em \`${config.host}:${config.port}\`. Status: Online. (Nick: ${mc.options.username})` });
-        }
-
-        try {
-            const data = await ping({ host: config.host, port: config.port, version: config.version });
-            return interaction.editReply({ content: `✅ Servidor \`${config.host}:${config.port}\` online. Jogadores: ${data.players.online}/${data.players.max}. Ping: ${data.latency}ms` });
-        } catch (e) {
-            return interaction.editReply({ content: `❌ Servidor \`${config.host}:${config.port}\` offline ou inacessível. ${e.message ? `(${e.message})` : ''}` });
-        }
+        return handleStatusCommand(interaction, client, guildId);
     }
     
     if (commandName === 'baixar') {
@@ -221,7 +223,8 @@ export async function handleMessage(msg) {
         if (!canais || !canais.includes(msg.channelId)) return;
 
         const mc = mcClients.get(msg.guildId);
-        if (!mc || mc.status !== 'online') return; // Verifica se está realmente pronto
+        const mcConectado = !!(mc && !mc.closed);
+        if (!mcConectado) return;
 
         // 1. Limpa menções e limita o tamanho da mensagem para evitar pacotes malformados
         let texto = msg.content.replace(/<@!?(\d+)>/g, (m, id) => {
@@ -235,8 +238,25 @@ export async function handleMessage(msg) {
         const authorName = msg.member?.displayName || msg.author.username;
         const mensagemFinal = `<${authorName}> ${texto}`;
 
-        // 3. Envia usando o método simplificado (o bedrock-protocol cuida do pacote 'text')
-        mc.chat(mensagemFinal);
+        // 3. Envia no formato oficial do bedrock-protocol para evitar "bad packet"
+        const chatPacket = {
+            needs_translation: false,
+            category: 'authored',
+            type: 'chat',
+            source_name: mc.username || 'Discord',
+            message: String(mensagemFinal).replace(/[\r\n]+/g, ' ').trim().slice(0, 250),
+            xuid: '',
+            platform_chat_id: '',
+            has_filtered_message: false,
+            filtered_message: ''
+        };
+        if (typeof mc.queue === 'function') {
+            mc.queue('text', chatPacket);
+        } else if (typeof mc.write === 'function') {
+            mc.write('text', chatPacket);
+        } else {
+            throw new Error('Cliente MC sem método de envio de pacote.');
+        }
 
         console.log(`[DC->MC] ${msg.guild.name}: ${mensagemFinal}`);
 

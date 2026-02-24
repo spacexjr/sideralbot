@@ -15,6 +15,7 @@ export const mcClients = new Map(); // Map<guildId, mcClient>
 export const jogadoresOnline = new Map(); // Map<guildId, Map<uuid, username>>
 export const tentativasReconexao = new Map(); // Map<guildId, number>
 export const conectando = new Set(); // Set<guildId>
+export const reconexaoBloqueada = new Set(); // Set<guildId>
 
 /**
  * Obtém ou cria o thread de logs.
@@ -66,6 +67,7 @@ async function tentarReconectar(guildId, client) {
     const MAX_TENTATIVAS = 10;
     const DELAY_MS = 10000;
     
+    if (reconexaoBloqueada.has(guildId)) return;
     if (conectando.has(guildId)) return;
     conectando.add(guildId);
 
@@ -81,9 +83,10 @@ async function tentarReconectar(guildId, client) {
     tentativasReconexao.set(guildId, attempts);
 
     if (attempts > MAX_TENTATIVAS) {
-        sendLogMessage(guildId, client, `❌ Abortando reconexão após ${MAX_TENTATIVAS} tentativas.`);
+        reconexaoBloqueada.add(guildId);
+        sendLogMessage(guildId, client, `❌ Reconexão automática abortada após ${MAX_TENTATIVAS} tentativas. Use /entrar para tentar novamente.`);
         conectando.delete(guildId);
-        tentativasReconexao.set(guildId, 0);
+        tentativasReconexao.set(guildId, MAX_TENTATIVAS);
         return;
     }
 
@@ -100,36 +103,51 @@ async function tentarReconectar(guildId, client) {
  */
 export async function conectarMinecraft(guildId, client, config = null, interaction = null) {
     const sendLog = (message) => sendLogMessage(guildId, client, message);
+    let interactionResponded = false;
+    const CONNECT_TIMEOUT_MS = 25000;
+    const respondInteraction = (content) => {
+        if (!interaction || !interaction.deferred || interactionResponded) return;
+        interactionResponded = true;
+        interaction.editReply(content).catch(e => console.error('Erro ao responder interação:', e.message));
+    };
+    const normalizeVersion = (v) => {
+        if (!v) return undefined;
+        const s = String(v).trim().toLowerCase();
+        if (!s || s === 'auto' || s === 'latest') return undefined;
+        return String(v).trim();
+    };
+    let timeoutId = null;
+    const clearConnectTimeout = () => {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+        }
+    };
     
     if (!config) {
         config = await carregarConfig(guildId);
         if (!config) {
             console.error(`[MC] Configuração não encontrada para guild ${guildId}`);
-            if (interaction && interaction.deferred) {
-                interaction.editReply('⚠️ Use `/setup` primeiro.')
-                    .catch(e => console.error('Erro ao responder interação:', e));
-            }
+            respondInteraction('⚠️ Use `/setup` primeiro.');
             return;
         }
     }
     
     if (!config.host || !config.port || !config.nick) {
         console.error(`[MC] Configuração inválida para guild ${guildId}:`, config);
-        if (interaction && interaction.deferred) {
-            interaction.editReply('⚠️ Configuração incompleta. Use `/setup` novamente.')
-                .catch(e => console.error('Erro ao responder interação:', e));
-        }
+        respondInteraction('⚠️ Configuração incompleta. Use `/setup` novamente.');
         return;
+    }
+    if (interaction) {
+        reconexaoBloqueada.delete(guildId);
+        tentativasReconexao.set(guildId, 0);
     }
     
     if (mcClients.has(guildId)) {
         const existingClient = mcClients.get(guildId);
         if (existingClient && !existingClient.closed) {
             console.log(`[MC] Guild ${guildId} já possui conexão ativa.`);
-            if (interaction && interaction.deferred) {
-                interaction.editReply('⚠️ O bot já está conectado ao servidor.')
-                    .catch(e => console.error('Erro ao responder interação:', e));
-            }
+            respondInteraction('⚠️ O bot já está conectado ao servidor.');
             return;
         } else {
             mcClients.delete(guildId);
@@ -142,18 +160,31 @@ export async function conectarMinecraft(guildId, client, config = null, interact
     try {
         console.log(`[MC] Conectando à ${config.host}:${config.port} como ${config.nick}...`);
         
+        const version = normalizeVersion(config.version);
         const mc = createClient({
             host: config.host,
             port: config.port,
             username: config.nick,
-            version: config.version,
-            skipPing: true,
+            version,
+            skipPing: !version ? false : true,
             offline: true,
         });
 
         mcClients.set(guildId, mc);
+        timeoutId = setTimeout(() => {
+            if (mcClients.get(guildId) !== mc) return;
+            const msg = `Timeout ao conectar em ${config.host}:${config.port} (${CONNECT_TIMEOUT_MS / 1000}s sem spawn)`;
+            console.error(`[MC] ${msg}`);
+            sendLog(`❌ ${msg}`);
+            respondInteraction(`❌ ${msg}. Verifique IP/porta/versão e se o servidor Bedrock está online.`);
+            try { mc.close(msg); } catch (e) { /* ignore */ }
+            mcClients.delete(guildId);
+            conectando.delete(guildId);
+            tentarReconectar(guildId, client);
+        }, CONNECT_TIMEOUT_MS);
         
         mc.once('spawn', () => {
+            clearConnectTimeout();
             console.log(`[MC] Guild ${guildId} spawnou no servidor.`);
             
             // ✅ LOG DE MÉTODOS DISPONÍVEIS
@@ -161,12 +192,10 @@ export async function conectarMinecraft(guildId, client, config = null, interact
             console.log('[MC METHODS]', proto);
 
             tentativasReconexao.set(guildId, 0);
+            reconexaoBloqueada.delete(guildId);
             conectando.delete(guildId);
             
-            if (interaction && interaction.deferred) { 
-                interaction.editReply(`✅ Conectado em \`${config.host}:${config.port}\` como \`${config.nick}\``)
-                    .catch(e => console.error("Erro ao dar feedback no Discord após conectar:", e.message));
-            }
+            respondInteraction(`✅ Conectado em \`${config.host}:${config.port}\` como \`${config.nick}\``);
 
             sendLog(`🟩 Conectado em ${config.host}:${config.port} como ${config.nick}`);
         });
@@ -174,6 +203,7 @@ export async function conectarMinecraft(guildId, client, config = null, interact
         attachMcHandlers(mc, guildId, client, config, sendLog);
 
         mc.on('disconnect', packet => {
+            clearConnectTimeout();
             console.log(`[DISCONNECT FULL]`, JSON.stringify(packet));
             console.log(`[MC] Guild ${guildId} desconectou:`, packet?.reason || packet?.message || 'Sem mensagem');
             mcClients.delete(guildId);
@@ -181,6 +211,7 @@ export async function conectarMinecraft(guildId, client, config = null, interact
             
             const reason = packet?.reason || packet?.message || 'Desconectado';
             sendLog(`🟥 **Desconectado:** ${reason}`);
+            respondInteraction(`❌ Falha ao conectar/desconectado: ${reason}`);
             
             if (reason !== 'Comando /sair' && !reason.includes('disconnect.kicked')) {
                 tentarReconectar(guildId, client); 
@@ -190,8 +221,10 @@ export async function conectarMinecraft(guildId, client, config = null, interact
         });
 
         mc.on('error', err => {
+            clearConnectTimeout();
             console.error(`[MC] Guild ${guildId} error:`, err?.message || err);
             sendLog(`❌ **Erro de conexão:** ${err?.message || String(err)}`);
+            respondInteraction(`❌ Erro de conexão: ${err?.message || String(err)}`);
             
             if (mcClients.get(guildId) === mc) {
                 mcClients.delete(guildId);
@@ -202,6 +235,7 @@ export async function conectarMinecraft(guildId, client, config = null, interact
         });
 
         mc.on('close', () => {
+            clearConnectTimeout();
             console.log(`[MC] Guild ${guildId} conexão fechada.`);
             if (mcClients.get(guildId) === mc) {
                 mcClients.delete(guildId);
@@ -209,13 +243,13 @@ export async function conectarMinecraft(guildId, client, config = null, interact
         });
 
     } catch (err) { 
+        clearConnectTimeout();
         console.error('[MC] conectarMinecraft catch (Síncrono):', err);
         mcClients.delete(guildId);
         conectando.delete(guildId);
 
         if (interaction && interaction.deferred) {
-             interaction.editReply(`❌ Erro ao iniciar a conexão ao servidor ${config.host}:${config.port}: ${err.message}`)
-                 .catch(e => console.error("Erro ao dar feedback de falha de conexão:", e.message));
+             respondInteraction(`❌ Erro ao iniciar a conexão ao servidor ${config.host}:${config.port}: ${err.message}`);
         }
         
         sendLog(`❌ Erro crítico ao conectar: ${err.message}`);
