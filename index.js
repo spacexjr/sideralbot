@@ -4,14 +4,14 @@ import 'dotenv/config';
 import {
     Client, GatewayIntentBits, REST, Routes, Events, ActivityType
 } from 'discord.js';
-import { 
-    esperarPostgres, 
-    setupEconomyTable, 
-    setupChatTable, 
-    setupNickTable, 
-    updateBalance, 
+import {
+    esperarPostgres,
+    setupPlaytimeTable,
+    setupChatTable,
+    setupNickTable,
+    addPlaytime,
     getUserIdByNick,
-    checkDbConnection // ✅ Importado para o Keep-Alive
+    checkDbConnection
 } from './db.js';
 import { commands } from './dc_commands.js';
 import { handleInteraction, handleMessage } from './dc_handlers.js';
@@ -39,7 +39,7 @@ const client = new Client({
         status: 'idle',
         activities: [
             {
-                name: "em uns servers de Minecraft Bedrock",
+                name: 'em uns servers de Minecraft Bedrock',
                 type: ActivityType.Playing
             }
         ]
@@ -51,14 +51,13 @@ const client = new Client({
 (async () => {
     // 1. Espera o PostgreSQL subir e se conectar
     await esperarPostgres();
-    
+
     // 1.1 Garante que as tabelas necessárias existem
-    await setupEconomyTable(); 
-    await setupChatTable();     
-    await setupNickTable();     
-    
-    // 1.2 ⏰ ADICIONADO: KEEP-ALIVE PARA RAILWAY
-    // Executa uma consulta simples a cada 9 minutos para manter o DB ativo.
+    await setupPlaytimeTable();
+    await setupChatTable();
+    await setupNickTable();
+
+    // 1.2 ⏰ KEEP-ALIVE PARA RAILWAY
     setInterval(async () => {
         try {
             await checkDbConnection();
@@ -66,7 +65,7 @@ const client = new Client({
         } catch (e) {
             console.error('💔 [DB] Keep-Alive falhou. Banco de dados pode ter adormecido.', e.message);
         }
-    }, 120000); // 2 min
+    }, 120000);
 
     // 2. Registro de Comandos Slash (Global)
     try {
@@ -80,7 +79,7 @@ const client = new Client({
     // 3. Listener de Bot Pronto (Online)
     client.once(Events.ClientReady, async () => {
         console.log(`🤖 Bot online como ${client.user.tag}`);
-        
+
         // ... (Carregamento de cache de membros existente)
         for (const [guildId, guild] of client.guilds.cache) {
             if (guild.memberCount > guild.members.cache.size) {
@@ -92,49 +91,31 @@ const client = new Client({
                 }
             }
         }
-        
-        // NOVO: Sistema de Ganho Automático (5 coins a cada 15 minutos para jogadores MC online)
-        const INTERVALO_MS = 15 * 60 * 1000; // 15 minutos
-        const GANHO_POR_INTERVALO = 5;
-        
-        setInterval(async () => {
-            // Apenas executa se houver clientes MC conectados (mapa mcClients não vazio)
-            if (mcClients.size === 0) return; 
 
-            console.log(`[ECONOMY] Dando +${GANHO_POR_INTERVALO} coins para jogadores online no MC.`);
-            
-            // Itera sobre todos os servidores MC conectados
-            for (const [guildId, mcClient] of mcClients.entries()) {
+        // Sistema de Playtime: +1 minuto a cada 60s para jogadores MC online e vinculados
+        const INTERVALO_MS = 60 * 1000;
+
+        setInterval(async () => {
+            if (mcClients.size === 0) return;
+
+            for (const [guildId] of mcClients.entries()) {
                 const guild = client.guilds.cache.get(guildId);
                 if (!guild) continue;
-                
-                // Obtém a lista de jogadores online no MC para este servidor
+
                 const onlinePlayersMap = jogadoresOnline.get(guildId);
                 if (!onlinePlayersMap || onlinePlayersMap.size === 0) continue;
-                
-                // Itera sobre cada nick de jogador online no MC
-                for (const mcNick of onlinePlayersMap.values()) {
-                    // 1. Busca o ID do Discord vinculado a este Nick MC
-                    const userId = await getUserIdByNick(mcNick);
 
-                    if (!userId) {
-                        console.log(`[ECONOMY] Nick MC (${mcNick}) não vinculado a um ID do Discord. Ignorando.`);
-                        continue;
-                    }
-                    
-                    // 2. Verifica se o usuário ainda é membro do Discord antes de dar a moeda (opcional)
+                for (const mcNick of onlinePlayersMap.values()) {
+                    const userId = await getUserIdByNick(mcNick);
+                    if (!userId) continue;
+
                     const member = guild.members.cache.get(userId);
-                    if (!member) {
-                        console.log(`[ECONOMY] Usuário ${userId} (Nick: ${mcNick}) não encontrado na guilda. Ignorando.`);
-                        continue;
-                    }
+                    if (!member) continue;
 
                     try {
-                        // 3. Dá a recompensa. Usa o ID do Discord e o ID da Guilda.
-                        await updateBalance(userId, guildId, GANHO_POR_INTERVALO);
-                        console.log(`[ECONOMY] ${mcNick} (${member.user.username}) ganhou ${GANHO_POR_INTERVALO} coins.`);
+                        await addPlaytime(userId, guildId, 1);
                     } catch (e) {
-                        console.error(`[ECONOMY] Erro ao dar coins para ${mcNick} (${userId}):`, e);
+                        console.error(`[PLAYTIME] Erro ao adicionar tempo para ${mcNick} (${userId}):`, e);
                     }
                 }
             }
@@ -142,21 +123,14 @@ const client = new Client({
     });
 
     // 4. Listeners de Eventos
-    // Lida com a execução de comandos Slash
     client.on(Events.InteractionCreate, (interaction) => handleInteraction(interaction, client));
-
-    // Lida com mensagens de chat do Discord (DC -> MC Chat)
     client.on(Events.MessageCreate, handleMessage);
 
 
     /* ---------- misc ---------- */
-    // Captura erros de promessas não tratadas e erros gerais do cliente
     process.on('unhandledRejection', e => console.error('UnhandledRejection', e));
     client.on('error', console.error);
-    
-    // Indica que o processo de login está iniciando
-    console.log(`🚀 Iniciando o Bot Discord...`);
 
-    // Inicia a conexão com o Discord
+    console.log('🚀 Iniciando o Bot Discord...');
     client.login(DISCORD_TOKEN);
 })().catch(e => console.error('BOOT ERR', e));

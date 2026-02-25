@@ -82,57 +82,64 @@ export async function carregarChat(guildId) {
 }
 
 // ----------------------------------------------------------------------
-// ---------- Funções de Queries (Economia) ----------
+// ---------- Funções de Queries (Playtime) ----------
 // ----------------------------------------------------------------------
 
 /**
- * Cria a tabela de saldos (economy) se não existir.
+ * Cria a tabela de tempo jogado (playtime) e remove a tabela antiga de economia.
  */
-export async function setupEconomyTable() {
+export async function setupPlaytimeTable() {
+    await pool.query(`DROP TABLE IF EXISTS economy;`);
     await pool.query(`
-    CREATE TABLE IF NOT EXISTS economy (
-      user_id VARCHAR(20) PRIMARY KEY,
-      guild_id VARCHAR(20) NOT NULL,
-      balance BIGINT DEFAULT 0
+    CREATE TABLE IF NOT EXISTS playtime (
+      user_id TEXT NOT NULL,
+      guild_id TEXT NOT NULL,
+      minutes_played INTEGER DEFAULT 0,
+      PRIMARY KEY (user_id, guild_id)
     );
     `);
 }
 
 /**
- * Obtém o saldo de um usuário.
- * @param {string} userId 
+ * Adiciona minutos ao tempo jogado de um usuário.
+ * @param {string} userId
+ * @param {string} guildId
+ * @param {number} minutes
+ */
+export async function addPlaytime(userId, guildId, minutes) {
+    await pool.query(`
+    INSERT INTO playtime (user_id, guild_id, minutes_played)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (user_id, guild_id) DO UPDATE SET
+      minutes_played = playtime.minutes_played + EXCLUDED.minutes_played
+    `, [userId, guildId, minutes]);
+}
+
+/**
+ * Obtém o total de minutos jogados de um usuário em uma guilda.
+ * @param {string} userId
+ * @param {string} guildId
  * @returns {number}
  */
-export async function getBalance(userId) {
-    const r = await pool.query("SELECT balance FROM economy WHERE user_id=$1", [userId]);
-    return parseInt(r.rows[0]?.balance) || 0; 
+export async function getPlaytime(userId, guildId) {
+    const r = await pool.query(
+        "SELECT minutes_played FROM playtime WHERE user_id=$1 AND guild_id=$2",
+        [userId, guildId]
+    );
+    return parseInt(r.rows[0]?.minutes_played) || 0;
 }
 
 /**
- * Adiciona/remove moedas do saldo de um usuário.
- * Cria o registro se não existir e o atualiza.
- * @param {string} userId 
- * @param {string} guildId 
- * @param {number} amount
+ * Obtém o ranking de tempo jogado para uma guilda (Top 10).
+ * @param {string} guildId
+ * @returns {{user_id: string, minutes_played: number}[]}
  */
-export async function updateBalance(userId, guildId, amount) {
-    await pool.query(`
-    INSERT INTO economy (user_id, guild_id, balance)
-    VALUES ($1, $2, $3)
-    ON CONFLICT (user_id) DO UPDATE SET
-      balance = economy.balance + EXCLUDED.balance
-    `, [userId, guildId, amount]);
-}
-
-/**
- * Obtém o ranking de saldos para uma guilda.
- * @param {string} guildId 
- * @param {number} limit 
- * @returns {{user_id: string, balance: number}[]}
- */
-export async function getTopBalances(guildId, limit = 10) {
-    const r = await pool.query("SELECT user_id, balance FROM economy WHERE guild_id=$1 ORDER BY balance DESC LIMIT $2", [guildId, limit]);
-    return r.rows.map(row => ({ user_id: row.user_id, balance: parseInt(row.balance) }));
+export async function getTopPlaytime(guildId) {
+    const r = await pool.query(
+        "SELECT user_id, minutes_played FROM playtime WHERE guild_id=$1 ORDER BY minutes_played DESC LIMIT 10",
+        [guildId]
+    );
+    return r.rows.map(row => ({ user_id: row.user_id, minutes_played: parseInt(row.minutes_played) }));
 }
 
 

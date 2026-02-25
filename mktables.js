@@ -41,12 +41,12 @@ async function createTables() {
             );
         `);
 
-        // 4. Tabela de Economia (Moedas)
+        // 4. Tabela de Tempo de Jogo (Playtime)
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS economy (
+            CREATE TABLE IF NOT EXISTS playtime (
                 user_id TEXT,
                 guild_id TEXT,
-                balance INTEGER DEFAULT 0,
+                minutes_played INTEGER DEFAULT 0,
                 PRIMARY KEY (user_id, guild_id)
             );
         `);
