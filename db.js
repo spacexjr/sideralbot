@@ -10,7 +10,8 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false },
     max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000
+    connectionTimeoutMillis: 10000,
+    family: 4
 });
 
 pool.on('error', (err, client) => {

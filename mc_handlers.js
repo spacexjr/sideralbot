@@ -1,6 +1,7 @@
 import { ChannelType, EmbedBuilder } from 'discord.js';
 import { ping } from 'bedrock-protocol';
 import { carregarChat, carregarConfig } from './db.js';
+import { askAI } from './ai_service.js';
 import { 
     jogadoresOnline, 
     getOrCreateLogThread, 
@@ -143,6 +144,30 @@ export function attachMcHandlers(mc, guildId, client, config, sendLog) {
 
             // NORMAL CHAT
             if (packet.source_name) {
+                if (noColor.startsWith('!c ')) {
+                    const prompt = noColor.slice(3).trim();
+                    const aiReply = await askAI(prompt);
+                    const chatPacket = {
+                        needs_translation: false,
+                        category: 'authored',
+                        type: 'chat',
+                        source_name: '§cIA',
+                        message: String(`§c<IA> ${aiReply}`).replace(/[\r\n]+/g, ' ').trim().slice(0, 250),
+                        xuid: '',
+                        platform_chat_id: '',
+                        has_filtered_message: false,
+                        filtered_message: ''
+                    };
+                    if (typeof mc.queue === 'function') {
+                        mc.queue('text', chatPacket);
+                    } else if (typeof mc.write === 'function') {
+                        mc.write('text', chatPacket);
+                    } else {
+                        throw new Error('Cliente MC sem método de envio de pacote.');
+                    }
+                    return;
+                }
+
                 await sendChatToChannel(guildId, client, packet.source_name, noColor);
             }
 
