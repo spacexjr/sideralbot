@@ -1,7 +1,7 @@
 import Groq from 'groq-sdk';
 
 const apiKey = process.env.GROQ_API_KEY;
-const preferredModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const preferredModel = process.env.GROQ_MODEL;
 let quotaCooldownUntil = 0;
 let lastQuotaLogAt = 0;
 
