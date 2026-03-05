@@ -10,7 +10,7 @@ export const commands = [
     .addStringOption(o => o.setName('versao').setDescription('Versão Bedrock').setRequired(true))
     .addStringOption(o => o.setName('nick').setDescription('Nick do bot').setRequired(true))
     .addStringOption(o => o.setName('canais').setDescription('Canais (#) separados ou IDs'))
-    .addStringOption(o => o.setName('cargos').setDescription('Cargos (@) separados ou IDs')),
+    .addStringOption(o => o.setName('cargos').setDescription('Cargos (@) separados ou IDs [Cargos que podem usar o /sair]')),
   new SlashCommandBuilder().setName('entrar').setDescription('Conecta ao servidor MC'),
   new SlashCommandBuilder().setName('sair').setDescription('Desconecta do servidor MC'),
   new SlashCommandBuilder().setName('setchat').setDescription('Define canais de chat MC ↔ DC').addStringOption(o => o.setName('canais').setDescription('Canais (#) separados ou IDs').setRequired(true)),
