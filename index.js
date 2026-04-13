@@ -61,7 +61,7 @@ const client = new Client({
     setInterval(async () => {
         try {
             await checkDbConnection();
-            console.log('💚 [DB] Keep-Alive: Conexão com o PostgreSQL mantida ativa.');
+            console.log('💚 [DB] Keep-Alive: Conexão com o MySQL mantida ativa.');
         } catch (e) {
             console.error('💔 [DB] Keep-Alive falhou. Banco de dados pode ter adormecido.', e.message);
         }

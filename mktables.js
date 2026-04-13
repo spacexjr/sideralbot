@@ -1,55 +1,53 @@
-// setup_db.js
+// mktables.js
 import 'dotenv/config';
-import pkg from 'pg';
-const { Pool } = pkg;
-
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-    family: 4
-});
+import mysql from 'mysql2/promise';
 
 async function createTables() {
+    const pool = mysql.createPool({
+        uri: process.env.DATABASE_URL,
+        ssl: { rejectUnauthorized: false }
+    });
+
     try {
-        console.log("⏳ Criando tabelas no banco de dados...");
+        console.log("⏳ Criando tabelas no MySQL...");
 
-        // 1. Tabela de Configurações do Servidor
+        // 1. Configurações (canais/cargos como LONGTEXT ou JSON para simular arrays)
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS configs (
-                guild_id TEXT PRIMARY KEY,
-                host TEXT NOT NULL,
-                port INTEGER NOT NULL,
-                version TEXT NOT NULL,
-                nick TEXT NOT NULL,
-                canais TEXT,
-                cargos TEXT
-            );
+        CREATE TABLE IF NOT EXISTS configs (
+            guild_id VARCHAR(50) PRIMARY KEY,
+                                            host TEXT NOT NULL,
+                                            port INTEGER NOT NULL,
+                                            version TEXT NOT NULL,
+                                            nick TEXT NOT NULL,
+                                            canais JSON,
+                                            cargos JSON
+        );
         `);
 
-        // 2. Tabela de Canais de Chat (DC <-> MC)
+        // 2. Canais de Chat
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS chat_channels (
-                guild_id TEXT PRIMARY KEY,
-                channel_ids TEXT NOT NULL
-            );
+        CREATE TABLE IF NOT EXISTS chat_channels (
+            guild_id VARCHAR(50) PRIMARY KEY,
+                                                  channel_ids JSON NOT NULL
+        );
         `);
 
-        // 3. Tabela de Vinculação de Nicks
+        // 3. Vinculação de Nicks
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS nick_vincular (
-                user_id TEXT PRIMARY KEY,
-                mc_nick TEXT NOT NULL UNIQUE
-            );
+        CREATE TABLE IF NOT EXISTS nick_vincular (
+            user_id VARCHAR(50) PRIMARY KEY,
+                                                  mc_nick VARCHAR(100) NOT NULL UNIQUE
+        );
         `);
 
-        // 4. Tabela de Tempo de Jogo (Playtime)
+        // 4. Playtime
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS playtime (
-                user_id TEXT,
-                guild_id TEXT,
-                minutes_played INTEGER DEFAULT 0,
-                PRIMARY KEY (user_id, guild_id)
-            );
+        CREATE TABLE IF NOT EXISTS playtime (
+            user_id VARCHAR(50),
+                                             guild_id VARCHAR(50),
+                                             minutes_played INTEGER DEFAULT 0,
+                                             PRIMARY KEY (user_id, guild_id)
+        );
         `);
 
         console.log("✅ Todas as tabelas foram criadas/verificadas com sucesso!");
