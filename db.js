@@ -1,177 +1,178 @@
 // db.js
-import mysql from 'mysql2/promise';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Low } from 'lowdb';
+import { JSONFile } from 'lowdb/node';
 import { sleep } from './utils.js';
 
-// ---------- Pool de Conexão ----------
-// Configurado para MySQL (Shockbyte)
-const pool = mysql.createPool({
-    uri: process.env.DATABASE_URL,
-    waitForConnections: true,
-    connectionLimit: 20,
-    queueLimit: 0,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 0,
-    ssl: { rejectUnauthorized: false } // Necessário para a maioria das hospedagens como Shockbyte
-});
+// ---------- Configuração do Lowdb ----------
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const file = join(__dirname, 'db.json');
 
-// ---------- Funções de Conexão ----------
-export async function esperarPostgres(retries = 10, delay = 2000) {
+// Define a estrutura padrão do seu banco de dados JSON
+const defaultData = { 
+    configs: [], 
+    chat: [], 
+    playtime: [], 
+    nick_vincular: [] 
+};
+
+const adapter = new JSONFile(file);
+const db = new Low(adapter, defaultData);
+
+// Inicializa o banco de dados e garante que ele tenha a estrutura correta
+export async function esperarPostgres(retries = 5, delay = 1000) {
+    // Mantive o nome da função para não quebrar seus imports no index.js, 
+    // mas agora ela apenas lê o arquivo JSON local.
     for (let i = 1; i <= retries; i++) {
         try {
-            await pool.query('SELECT 1');
-            console.log('📦 MySQL online');
+            await db.read();
+            // Garante que se o arquivo estiver vazio, ele use a estrutura padrão
+            db.data ||= defaultData;
+            await db.write();
+            console.log('📦 Lowdb (JSON) online e pronto!');
             return;
         } catch (e) {
-            console.log(`⏳ MySQL iniciando... ${i}/${retries}`);
+            console.log(`⏳ Inicializando Lowdb... ${i}/${retries}`);
             await sleep(delay);
         }
     }
-    console.error('❌ MySQL não iniciou após várias tentativas. Saindo.');
+    console.error('❌ Não foi possível carregar o arquivo do Lowdb.');
     process.exit(1);
 }
+
+// ---------- Funções de Tabelas (Simuladas) ----------
+// No Lowdb não precisamos criar tabelas, basta garantir que os arrays existam.
+export async function setupChatTable() { db.data.chat ||= []; await db.write(); }
+export async function setupPlaytimeTable() { db.data.playtime = []; await db.write(); } // Drop economy/playtime simulado
+export async function setupNickTable() { db.data.nick_vincular ||= []; await db.write(); }
 
 // ---------- Funções de Queries (Configuração) ----------
 
 export async function salvarConfig(guildId, ip, porta, versao, nick, canais, cargos) {
-    await pool.query(`
-    INSERT INTO configs (guild_id, host, port, version, nick, canais, cargos)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-    host = VALUES(host),
-                     port = VALUES(port),
-                     version = VALUES(version),
-                     nick = VALUES(nick),
-                     canais = VALUES(canais),
-                     cargos = VALUES(cargos)
-                     `, [guildId, ip, porta, versao, nick, JSON.stringify(canais), JSON.stringify(cargos)]);
+    await db.read();
+    const index = db.data.configs.findIndex(c => c.guild_id === guildId);
+
+    const novaConfig = {
+        guild_id: guildId,
+        host: ip,
+        port: porta,
+        version: versao,
+        nick: nick,
+        canais: canais, // Salva como objeto/array direto, sem precisar de JSON.stringify
+        cargos: cargos
+    };
+
+    if (index !== -1) {
+        db.data.configs[index] = novaConfig; // ON DUPLICATE KEY UPDATE
+    } else {
+        db.data.configs.push(novaConfig);
+    }
+    await db.write();
 }
 
 export async function carregarConfig(guildId) {
-    const [rows] = await pool.query("SELECT * FROM configs WHERE guild_id=?", [guildId]);
-    if (!rows[0]) return null;
+    await db.read();
+    const config = db.data.configs.find(c => c.guild_id === guildId);
+    if (!config) return null;
 
-    const res = rows[0];
-
-    // Tratamento robusto para evitar o erro "Unexpected non-whitespace character"
-    const safeParse = (data) => {
-        if (!data) return [];
-        if (typeof data !== 'string') return data; // Se o driver já converter para objeto
-        try {
-            return JSON.parse(data);
-        } catch (e) {
-            console.warn(`⚠️ Dados inválidos na coluna de config para a guilda ${guildId}. Resetando para [].`);
-            return [];
-        }
-    };
-
+    // Como salvamos direto em JSON, não há risco de problemas de parse que o driver do MySQL causava
     return {
-        ...res,
-        canais: safeParse(res.canais),
-        cargos: safeParse(res.cargos)
+        ...config,
+        canais: config.canais || [],
+        cargos: config.cargos || []
     };
 }
 
 // ---------- Funções de Queries (Chat) ----------
 
-export async function setupChatTable() {
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS chat (
-        guild_id VARCHAR(50) PRIMARY KEY,
-                                     canais JSON
-    );
-    `);
-}
-
 export async function salvarChat(guildId, canais) {
-    await pool.query(`
-    INSERT INTO chat (guild_id, canais) VALUES (?, ?)
-    ON DUPLICATE KEY UPDATE canais = VALUES(canais)
-    `, [guildId, JSON.stringify(canais)]);
+    await db.read();
+    const index = db.data.chat.findIndex(c => c.guild_id === guildId);
+
+    if (index !== -1) {
+        db.data.chat[index].canais = canais;
+    } else {
+        db.data.chat.push({ guild_id: guildId, canais: canais });
+    }
+    await db.write();
 }
 
 export async function carregarChat(guildId) {
-    const [rows] = await pool.query("SELECT canais FROM chat WHERE guild_id=?", [guildId]);
-    if (!rows[0]) return [];
-
-    // O MySQL com driver mysql2 já costuma fazer o parse automático de colunas tipo JSON
-    const data = rows[0].canais;
-    return typeof data === 'string' ? JSON.parse(data) : (data || []);
+    await db.read();
+    const chat = db.data.chat.find(c => c.guild_id === guildId);
+    return chat ? chat.canais : [];
 }
 
 // ---------- Funções de Queries (Playtime) ----------
 
-export async function setupPlaytimeTable() {
-    await pool.query(`DROP TABLE IF EXISTS economy;`);
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS playtime (
-        user_id VARCHAR(50) NOT NULL,
-                                         guild_id VARCHAR(50) NOT NULL,
-                                         minutes_played INTEGER DEFAULT 0,
-                                         PRIMARY KEY (user_id, guild_id)
-    );
-    `);
-}
-
 export async function addPlaytime(userId, guildId, minutes) {
-    await pool.query(`
-    INSERT INTO playtime (user_id, guild_id, minutes_played)
-    VALUES (?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-    minutes_played = minutes_played + VALUES(minutes_played)
-    `, [userId, guildId, minutes]);
+    await db.read();
+    const registro = db.data.playtime.find(p => p.user_id === userId && p.guild_id === guildId);
+
+    if (registro) {
+        registro.minutes_played += minutes;
+    } else {
+        db.data.playtime.push({
+            user_id: userId,
+            guild_id: guildId,
+            minutes_played: minutes
+        });
+    }
+    await db.write();
 }
 
 export async function getPlaytime(userId, guildId) {
-    const [rows] = await pool.query(
-        "SELECT minutes_played FROM playtime WHERE user_id=? AND guild_id=?",
-        [userId, guildId]
-    );
-    return parseInt(rows[0]?.minutes_played) || 0;
+    await db.read();
+    const registro = db.data.playtime.find(p => p.user_id === userId && p.guild_id === guildId);
+    return registro ? parseInt(registro.minutes_played) : 0;
 }
 
 export async function getTopPlaytime(guildId) {
-    const [rows] = await pool.query(
-        "SELECT user_id, minutes_played FROM playtime WHERE guild_id=? ORDER BY minutes_played DESC LIMIT 10",
-        [guildId]
-    );
-    return rows.map(row => ({
-        user_id: row.user_id,
-        minutes_played: parseInt(row.minutes_played)
-    }));
+    await db.read();
+    return db.data.playtime
+        .filter(p => p.guild_id === guildId)
+        .sort((a, b) => b.minutes_played - a.minutes_played)
+        .slice(0, 10)
+        .map(row => ({
+            user_id: row.user_id,
+            minutes_played: parseInt(row.minutes_played)
+        }));
 }
 
 // ---------- Funções de Queries (Vinculação Nick MC) ----------
 
-export async function setupNickTable() {
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS nick_vincular (
-        user_id VARCHAR(50) PRIMARY KEY,
-                                              mc_nick VARCHAR(100) UNIQUE NOT NULL
-    );
-    `);
-}
-
 export async function vincularNick(userId, mcNick) {
-    await pool.query(`
-    INSERT INTO nick_vincular (user_id, mc_nick)
-    VALUES (?, ?)
-    ON DUPLICATE KEY UPDATE
-    mc_nick = VALUES(mc_nick)
-    `, [userId, mcNick.toLowerCase()]);
+    await db.read();
+    const nickLower = mcNick.toLowerCase();
+    
+    // Simula a restrição UNIQUE do banco de dados (remover vínculos antigos com esse mesmo nick, se houver)
+    db.data.nick_vincular = db.data.nick_vincular.filter(n => n.mc_nick !== nickLower);
+
+    const index = db.data.nick_vincular.findIndex(n => n.user_id === userId);
+    if (index !== -1) {
+        db.data.nick_vincular[index].mc_nick = nickLower;
+    } else {
+        db.data.nick_vincular.push({ user_id: userId, mc_nick: nickLower });
+    }
+    await db.write();
 }
 
 export async function getNickVinculado(userId) {
-    const [rows] = await pool.query("SELECT mc_nick FROM nick_vincular WHERE user_id=?", [userId]);
-    return rows[0]?.mc_nick || null;
+    await db.read();
+    const registro = db.data.nick_vincular.find(n => n.user_id === userId);
+    return registro ? registro.mc_nick : null;
 }
 
 export async function getUserIdByNick(mcNick) {
-    const [rows] = await pool.query("SELECT user_id FROM nick_vincular WHERE mc_nick=?", [mcNick.toLowerCase()]);
-    return rows[0]?.user_id || null;
+    await db.read();
+    const registro = db.data.nick_vincular.find(n => n.mc_nick === mcNick.toLowerCase());
+    return registro ? registro.user_id : null;
 }
 
 // ---------- Manutenção ----------
 
 export async function checkDbConnection() {
-    await pool.query('SELECT 1');
+    // Apenas garante que o arquivo é legível para validar o "healthcheck"
+    await db.read();
 }
