@@ -36,10 +36,23 @@ async function testarServidor(config) {
 
 
 /**
+ * Remove códigos de cor/formatação do Minecraft de uma string.
+ */
+function stripColor(str) {
+    return (str || '').replace(/§[0-9a-fklmnor]/gi, '').trim();
+}
+
+
+/**
  * Envia mensagem de chat do MC para o canal do Discord.
  */
-async function sendChatToChannel(guildId, client, author, texto) {
+async function sendChatToChannel(guildId, client, author, texto, botNick) {
     try {
+        // Ignora mensagens do próprio bot (compara já sem códigos de cor)
+        if (!author) return;
+        if (author === botNick) return;
+        if (author === 'IA') return;
+
         const canais = await carregarChat(guildId);
         if (!canais || canais.length === 0) return;
         const canal = client.channels.cache.get(canais[0]);
@@ -71,24 +84,39 @@ export function attachMcHandlers(mc, guildId, client, config, sendLog) {
     /* ---------- MC text handler: chat, join/leave, death, advancement ---------- */
     mc.on('text', async packet => {
         try {
-            if (!packet.message || (packet.source_name && packet.source_name === config.nick)) return;
+            if (!packet.message) return;
 
             const raw = (packet.message || '').trim();
-            const noColor = raw.replace(/§[0-9a-fklmnor]/gi, '').trim();
+            const noColor = stripColor(raw);
+
+            // ✅ CORREÇÃO: remove §r e outros códigos do source_name antes de comparar
+            const sourceName = stripColor(packet.source_name || '');
+
             const params = packet.parameters || [];
+
+            // Ignora mensagens originadas pelo próprio bot (nick, IA, formato DC->MC)
+            const isOwnMessage =
+                sourceName === config.nick ||
+                sourceName === 'IA' ||
+                noColor.startsWith(`<${config.nick}>`) ||
+                raw.startsWith(`§1 <${config.nick}>`) ||
+                raw.startsWith(`§5 <${config.nick}>`) ||
+                raw.startsWith('§c<IA>');
+
+            if (isOwnMessage) return;
 
             // 1. Detecção de Join/Leave
             const isJoin = /%multiplayer\.player\.joined/i.test(raw) || / entrou no jogo$/i.test(noColor) || / joined the game$/i.test(noColor);
             const isLeave = /%multiplayer\.player\.left/i.test(raw) || / saiu do jogo$/i.test(noColor) || / left the game$/i.test(noColor);
-            const playerName = params[0] || packet.source_name || 'Jogador';
+            const playerName = params[0] || sourceName || 'Jogador';
 
-            // 2. Detecção de Morte (type: translation ou chave/texto)
+            // 2. Detecção de Morte
             const isDeathKey = raw.toLowerCase().includes('death.attack.');
             const isDeathText = noColor.toLowerCase().includes('morreu') || noColor.toLowerCase().includes('died');
             const isTranslationDeath = packet.type === 'translation' && raw.startsWith('death.'); 
             const isDeath = isDeathKey || isDeathText || isTranslationDeath;
 
-            // 3. Detecção de outros eventos de sistema (Avances, Tips)
+            // 3. Detecção de outros eventos de sistema
             const isSystemEvent = (packet.type === 'system' || packet.type === 'tip' || packet.type === 'announcement') && !isJoin && !isLeave && !isDeath;
             const isAdvancement = isSystemEvent && (raw.startsWith('%') || noColor.toLowerCase().includes('concluiu o desafio') || noColor.toLowerCase().includes('achievement'));
 
@@ -97,7 +125,8 @@ export function attachMcHandlers(mc, guildId, client, config, sendLog) {
             if (isJoin || isLeave || isDeath || isAdvancement) {
                 const thread = await getOrCreateLogThread(guildId, client);
                 const fallbackSend = async (text) => {
-                    const canais = await carregarChat(guildId); const canal = client.channels.cache.get(canais[0]);
+                    const canais = await carregarChat(guildId);
+                    const canal = client.channels.cache.get(canais[0]);
                     if (canal?.type === ChannelType.GuildText) canal.send(text).catch(() => {});
                 };
 
@@ -116,17 +145,12 @@ export function attachMcHandlers(mc, guildId, client, config, sendLog) {
                 }
                 
                 if (isDeath || isAdvancement) {
-                    let prefix = isDeath ? '💀' : '⭐';
+                    const prefix = isDeath ? '💀' : '⭐';
                     let logMsg;
                     const nomeJogador = params[0] && params[0] !== 'Jogador' ? params[0] : 'Um jogador';
                     
                     if (isDeath) {
-                        let causaKey = raw;
-                        if (isTranslationDeath || isDeathKey) {
-                            causaKey = raw; 
-                        } else {
-                            causaKey = noColor;
-                        }
+                        const causaKey = (isTranslationDeath || isDeathKey) ? raw : noColor;
                         logMsg = `**${nomeJogador} Morreu** Causa: ${causaKey}`;
                     } else if (isAdvancement) {
                         logMsg = raw.startsWith('%') ? `[AVANÇO CHAVE] ${raw}` : noColor;
@@ -138,12 +162,12 @@ export function attachMcHandlers(mc, guildId, client, config, sendLog) {
             }
 
             // Ignorar logs de sistema/tip que não são eventos logáveis
-            if ((packet.type === 'system' || packet.type === 'tip' || packet.type === 'announcement' || packet.type === 'whisper') || packet.source_name === '') {
+            if ((packet.type === 'system' || packet.type === 'tip' || packet.type === 'announcement' || packet.type === 'whisper') || sourceName === '') {
                 return;
             }
 
             // NORMAL CHAT
-            if (packet.source_name) {
+            if (sourceName) {
                 if (noColor.startsWith('!c ')) {
                     const prompt = noColor.slice(3).trim();
                     const aiReply = await askAI(prompt);
@@ -168,7 +192,8 @@ export function attachMcHandlers(mc, guildId, client, config, sendLog) {
                     return;
                 }
 
-                await sendChatToChannel(guildId, client, packet.source_name, noColor);
+                // sourceName já está sem códigos de cor, config.nick também será comparado limpo
+                await sendChatToChannel(guildId, client, sourceName, noColor, config.nick);
             }
 
         } catch (err) {
@@ -206,40 +231,31 @@ export function attachMcHandlers(mc, guildId, client, config, sendLog) {
 // ---------------------------------------------------------------------
 
 /**
- * Manipula o comando /status do Discord, gerando informações completas.
- * @param {import('discord.js').Interaction} interaction A interação de comando.
- * @param {import('discord.js').Client} client O cliente Discord.
- * @param {string} guildId O ID da guilda.
+ * Manipula o comando /status do Discord.
  */
 export async function handleStatusCommand(interaction, client, guildId) {
-    // Pegar timestamp inicial para calcular ping do Discord
     const sent = interaction.createdTimestamp;
     
-    // Carregar config
     const config = await carregarConfig(guildId);
     if (!config) {
         return interaction.editReply('⚠️ Use `/setup` primeiro.');
     }
 
-    // Dados do bot - verificar se mcClient existe e está conectado
     const mcClient = mcClients.get(guildId);
     const mcIsConnected = !!(mcClient && !mcClient.closed);
     const isConnecting = conectando.has(guildId);
     const tentativas = tentativasReconexao.get(guildId) || 0;
 
-    // Testar servidor via ping
     const serverTest = await testarServidor(config);
     
-    // Status do servidor
     let serverStatus = "❌ Offline";
-    let serverStatusColor = 0xe74c3c; // Vermelho
+    let serverStatusColor = 0xe74c3c;
     
     if (serverTest.online) {
         serverStatus = `✅ Online | ${serverTest.jogadores}/${serverTest.max}`;
-        serverStatusColor = 0x2ecc71; // Verde
+        serverStatusColor = 0x2ecc71;
     }
 
-    // Status do bot
     let botStatusEmoji, botStatusText;
     if (mcIsConnected) {
         botStatusEmoji = '✅';
@@ -247,17 +263,15 @@ export async function handleStatusCommand(interaction, client, guildId) {
     } else if (isConnecting) {
         botStatusEmoji = '🔄';
         botStatusText = `Reconectando (${tentativas}ª tentativa)`;
-        serverStatusColor = 0xffa500; // Laranja
+        serverStatusColor = 0xffa500;
     } else {
         botStatusEmoji = '❌';
         botStatusText = 'Desconectado';
     }
 
-    // Informações de jogadores
     const dados = jogadoresOnline.get(guildId) || new Map();
     let jogadoresTexto = "👥 Nenhum jogador online";
     
-    // Priorizar playersSample do ping se disponível
     if (serverTest.playersSample && serverTest.playersSample.length > 0) {
         const nomes = serverTest.playersSample.map(p => p.name).join(', ');
         jogadoresTexto = `👥 Jogadores: ${nomes}`;
@@ -268,17 +282,14 @@ export async function handleStatusCommand(interaction, client, guildId) {
         }
     }
 
-    // Dias do servidor
     let diasInfo = '';
     if (dados.diasServidor !== undefined) {
         diasInfo = `\n⏳ Dias no servidor: ${dados.diasServidor}`;
     }
 
-    // Pings
     const discordPing = Date.now() - sent;
     const apiPing = client.ws.ping;
 
-    // Criar embed
     const embed = new EmbedBuilder()
         .setColor(serverStatusColor)
         .setTitle('🏓 Pong!')
